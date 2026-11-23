@@ -9,6 +9,10 @@ with a WebXR viewer that runs in the Quest 3 browser. One container, one `/data`
 
 The viewer is derived from [browser-sharp](https://github.com/michael-mueller-git/browser-sharp) (`quest3` branch), with the Supabase/remote storage replaced by the built-in server.
 
+![splatbox web UI](docs/screenshot.png)
+
+*Web UI with a server-hosted collection and a (synthetic demo) splat loaded.*
+
 ## Run
 
 ```bash
