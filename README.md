@@ -13,6 +13,10 @@ The viewer is derived from [browser-sharp](https://github.com/michael-mueller-gi
 
 *Web UI with a server-hosted collection and a (synthetic demo) splat loaded.*
 
+![asset browser](docs/asset-browser.png)
+
+*Asset browser: the thumbnail strip for the open collection ("1 / N" button). A full grid gallery is planned.*
+
 ## Run
 
 ```bash
