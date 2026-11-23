@@ -1,0 +1,14 @@
+services:
+  splatbox:
+    image: ghcr.io/isabellas-agent/splatbox:edge
+    ports: ["8080:8080"]
+    volumes: ["splatbox-data:/data"]
+    environment:
+      # Optional basic auth: set both to enable
+      # BASIC_AUTH_USER: admin
+      # BASIC_AUTH_PASSWORD: change-me
+      # BASIC_AUTH_READONLY: "true"   # only protect writes; viewing stays open
+      MAX_UPLOAD_GB: "4"
+    restart: unless-stopped
+volumes:
+  splatbox-data:
