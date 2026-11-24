@@ -41,8 +41,7 @@ export class AssetSource {
 
   /**
    * Validate and establish connection to the source.
-   * For local folders, this verifies the handle is still valid.
-   * For remote sources, this performs a HEAD/fetch test.
+   * For server collections this loads the manifest.
    * @returns {Promise<{success: boolean, error?: string}>}
    */
   async connect() {

@@ -1,12 +1,12 @@
 /**
  * Storage Source Types & Interfaces
  * 
- * Defines the unified abstraction for all asset sources (local folders, URLs, server collections).
+ * Defines the asset source abstraction used by server collections.
  * Each adapter must implement the AssetSource interface to work with the render pipeline.
  */
 
 /**
- * @typedef {'local-folder' | 'public-url' | 'server-collection'} SourceType
+ * @typedef {'server-collection'} SourceType
  */
 
 /**
@@ -28,19 +28,6 @@
  * @property {number} lastAccessed - Timestamp of last access
  * @property {boolean} [isDefault] - Marks the default collection to auto-load
  * @property {Object} config - Type-specific configuration
- */
-
-/**
- * @typedef {Object} LocalFolderConfig
- * @property {FileSystemDirectoryHandle} [handle] - Persisted directory handle
- * @property {string} path - Display path (folder name)
- */
-
-/**
- * @typedef {Object} PublicUrlConfig
- * @property {string} baseUrl - Base URL for assets
- * @property {string} [manifestUrl] - Optional manifest.json URL
- * @property {string[]} [assetPaths] - Direct list of asset paths (if no manifest)
  */
 
 /**
@@ -74,8 +61,8 @@
  */
 
 /**
- * Required Supabase layout (manifest-first):
- * {bucket}/
+ * Server collection layout (manifest-first):
+ * $DATA_DIR/
  * └── collections/{collectionId}/
  *     ├── manifest.json          // source of truth
  *     └── assets/
@@ -103,48 +90,3 @@
 // Validation constants
 export const MANIFEST_VERSION = 1;
 export const SUPPORTED_MANIFEST_VERSIONS = [1];
-
-// Storage source tier labels for UI
-export const SOURCE_TIERS = {
-  'local-folder': {
-    tier: 1,
-    label: 'Local Folder',
-    description: 'Select a folder from your device',
-    benefits: ['Works offline', 'Fast loading', 'No setup required'],
-    requirements: ['Browser must support File System Access API'],
-    icon: 'folder',
-  },
-  'server-collection': {
-    tier: 2,
-    label: 'Server collection',
-    description: 'Collection stored on this splatbox server',
-    benefits: ['Shared across all your devices', 'Uploads stay on your server'],
-    requirements: [],
-    icon: 'cloud',
-  },
-  'public-url': {
-    tier: 3,
-    label: 'URL list',
-    description: 'List of public asset URLs (read-only)',
-    benefits: ['No setup', 'Works with any public file URL'],
-    requirements: ['Direct HTTP/HTTPS links to .sog/.ply assets'],
-    icon: 'link',
-  },
-};
-
-/**
- * Checks if File System Access API is supported
- * @returns {boolean}
- */
-export const isFileSystemAccessSupported = () => {
-  return 'showDirectoryPicker' in window;
-};
-
-/**
- * Creates a unique source ID
- * @param {SourceType} type
- * @returns {string}
- */
-export const createSourceId = (type) => {
-  return `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-};

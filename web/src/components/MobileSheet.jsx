@@ -10,7 +10,6 @@ import CameraControls from './CameraControls';
 import DebugSettings from './DebugSettings';
 import AnimationSettings from './AnimationSettings';
 import StorageSourceList from './StorageSourceList';
-import ConnectStorageDialog from './ConnectStorageDialog';
 import { getFormatAccept } from '../formats/index';
 import { handleMultipleFiles, loadFromStorageSource } from '../fileLoader';
 
@@ -28,23 +27,6 @@ function MobileSheet() {
   // Refs
   const fileInputRef = useRef(null);
   const dragHandleRef = useRef(null);
-
-  // Storage dialog state
-  const [storageDialogOpen, setStorageDialogOpen] = useState(false);
-
-  const handleOpenStorageDialog = useCallback(() => {
-    setStorageDialogOpen(true);
-  }, []);
-
-  const handleCloseStorageDialog = useCallback(() => {
-    setStorageDialogOpen(false);
-  }, []);
-
-  const handleSourceConnect = useCallback((source) => {
-    // Load assets from newly connected source
-    loadFromStorageSource(source);
-    setStorageDialogOpen(false);
-  }, []);
 
   const handleSelectSource = useCallback((source) => {
     // Load assets from selected source
@@ -103,7 +85,6 @@ function MobileSheet() {
         <CameraControls />
         <AnimationSettings />
         <StorageSourceList 
-          onAddSource={handleOpenStorageDialog}
           onSelectSource={handleSelectSource}
         />
                 <DebugSettings />
@@ -111,12 +92,6 @@ function MobileSheet() {
         {/* <AssetGallery /> */}
       </div>
 
-      {/* Connect to Storage dialog */}
-      <ConnectStorageDialog
-        isOpen={storageDialogOpen}
-        onClose={handleCloseStorageDialog}
-        onConnect={handleSourceConnect}
-      />
     </div>
   );
 }

@@ -24,10 +24,7 @@ import { faRotateRight, faTableCellsLarge } from '@fortawesome/free-solid-svg-ic
 import { faExpand, faCompress } from '@fortawesome/free-solid-svg-icons';
 import { initVrSupport } from '../vrMode';
 import { getFormatAccept } from '../formats/index';
-import ConnectStorageDialog from './ConnectStorageDialog';
 
-/** Delay before resize after panel toggle animation completes */
-const PANEL_TRANSITION_MS = 350;
 
 const updateControlSpeedsForFov = (fov) => {
   if (!controls) return;
@@ -49,7 +46,6 @@ function App() {
   const setCurrentAssetIndex = useStore((state) => state.setCurrentAssetIndex);
   const setAssets = useStore((state) => state.setAssets);
   const toggleAssetSidebar = useStore((state) => state.toggleAssetSidebar);
-  const setStatus = useStore((state) => state.setStatus);
   const addLog = useStore((state) => state.addLog);
   const focusSettingActive = useStore((state) => state.focusSettingActive);
   const fov = useStore((state) => state.fov);
@@ -69,9 +65,8 @@ function App() {
   const [hasMesh, setHasMesh] = useState(false);
   const hasMeshRef = useRef(false);
 
-  // File input + storage dialog state for title card actions
+  // File input for "Open local files"
   const fileInputRef = useRef(null);
-  const [storageDialogOpen, setStorageDialogOpen] = useState(false);
 
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -260,30 +255,6 @@ function App() {
   }, []);
 
   /**
-   * Title card actions: storage dialog
-   */
-  const handleOpenStorage = useCallback(() => {
-    (async () => {
-      await new Promise((r) => setTimeout(r, PANEL_TRANSITION_MS));
-      setStorageDialogOpen(true);
-    })();
-  }, []);
-
-  const handleCloseStorage = useCallback(() => {
-    setStorageDialogOpen(false);
-  }, []);
-
-  const handleSourceConnect = useCallback(async (source) => {
-    setStorageDialogOpen(false);
-    setGalleryOpen(false);
-    try {
-      await loadFromStorageSource(source);
-    } catch (err) {
-      addLog('Failed to load from storage: ' + (err?.message || err));
-    }
-  }, [addLog]);
-
-  /**
    * Gallery actions: open a scan from a collection in the viewer.
    * Reuses the loaded asset list when the collection is already active.
    */
@@ -299,23 +270,6 @@ function App() {
       addLog('Failed to open scan: ' + (err?.message || err));
     }
   }, [activeSourceId, assets.length, addLog]);
-
-  const handleOpenSource = useCallback(async (source) => {
-    setGalleryOpen(false);
-    try {
-      if (!source.isConnected()) {
-        const result = await source.connect(true);
-        if (!result?.success) {
-          setStatus(`Could not open "${source.name}": ${result?.error || 'permission needed'}`);
-          setGalleryOpen(true);
-          return;
-        }
-      }
-      await loadFromStorageSource(source);
-    } catch (err) {
-      addLog('Failed to load from storage: ' + (err?.message || err));
-    }
-  }, [addLog, setStatus]);
 
   /**
    * Detects mobile device and orientation.
@@ -395,9 +349,7 @@ function App() {
         canReturn={assets.length > 0}
         onReturn={() => setGalleryOpen(false)}
         onOpenAsset={handleOpenAsset}
-        onOpenSource={handleOpenSource}
         onPickFiles={handlePickFile}
-        onOpenStorage={handleOpenStorage}
       />
         <Viewer viewerReady={viewerReady} />
       {/* Separate swipe target near bottom controls (debug green) */}
@@ -483,11 +435,6 @@ function App() {
 )}
       </div>
 
-      <ConnectStorageDialog
-        isOpen={storageDialogOpen}
-        onClose={handleCloseStorage}
-        onConnect={handleSourceConnect}
-      />
     </div>
   );
 }

@@ -7,26 +7,15 @@ import { render } from 'preact';
 import App from './components/App';
 import './style.css';
 
-// Initialize storage sources from IndexedDB on startup
 import {
-  initializeSources,
   syncServerSources,
   registerSource,
   unregisterSource,
   getSourcesArray,
 } from './storage/index.js';
 
-// Initialize storage sources first, then render the app
+// Discover the server collections, then render the app
 const startApp = async () => {
-  try {
-    const sources = await initializeSources();
-    if (sources.length > 0) {
-      console.log(`[Storage] Restored ${sources.length} storage source(s)`);
-    }
-  } catch (err) {
-    console.warn('[Storage] Failed to restore sources:', err);
-  }
-
   // Discover collections hosted by the server that served this page
   try {
     await syncServerSources(registerSource, unregisterSource, getSourcesArray);

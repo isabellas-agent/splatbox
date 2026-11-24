@@ -432,28 +432,10 @@ function AssetSidebar() {
               const sourceType = asset?.sourceType;
               const isCollection = !!asset?.sourceId;
               const source = asset?.sourceId ? getSource(asset.sourceId) : null;
-              const isLocalCollection = sourceType === 'local-folder';
-              const isUrlCollection = sourceType === 'public-url';
               const isServer = sourceType === 'server-collection';
 
               if (!isCollection) {
                 return null; // plain queue, no source note
-              }
-
-              if (isLocalCollection) {
-                return (
-                  <p class="modal-note">
-                    Removing here only clears it from the app; delete the file in the folder to remove it on your device.
-                  </p>
-                );
-              }
-
-              if (isUrlCollection) {
-                return (
-                  <p class="modal-note">
-                    This only removes the link from the collection; the original URL/file stays online.
-                  </p>
-                );
               }
 
               if (isServer && !deleteRemote) {

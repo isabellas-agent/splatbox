@@ -13,7 +13,6 @@ import {
   faFolderOpen,
   faFolderPlus,
   faPen,
-  faPlug,
   faRotate,
   faTrash,
   faUpload,
@@ -381,7 +380,7 @@ function CollectionSection({ source, assets, query, tagFilter, selection, select
   );
 }
 
-function Gallery({ show, canReturn, onReturn, onOpenAsset, onOpenSource, onPickFiles, onOpenStorage }) {
+function Gallery({ show, canReturn, onReturn, onOpenAsset, onPickFiles }) {
   const [sources, setSources] = useState(() => getSourcesArray());
   const [assetsBySource, setAssetsBySource] = useState({});
   const [loading, setLoading] = useState(false);
@@ -400,7 +399,6 @@ function Gallery({ show, canReturn, onReturn, onOpenAsset, onOpenSource, onPickF
     () => sources.filter(isServerSource).sort((a, b) => a.name.localeCompare(b.name)),
     [sources],
   );
-  const otherSources = useMemo(() => sources.filter((s) => !isServerSource(s)), [sources]);
 
   const allTags = useMemo(() => {
     const counts = new Map();
@@ -648,23 +646,10 @@ function Gallery({ show, canReturn, onReturn, onOpenAsset, onOpenSource, onPickF
           ))}
 
           <section class="gallery-section gallery-section--other">
-            <header class="gallery-section__header">
-              <h2>Other sources</h2>
-            </header>
             <div class="gallery-other">
-              {otherSources.map((s) => (
-                <button key={s.id} class="gallery-btn" onClick={() => onOpenSource(s)} title={`Open ${s.name}`}>
-                  <FontAwesomeIcon icon={faFolderOpen} />
-                  <span>{s.name}</span>
-                </button>
-              ))}
-              <button class="gallery-btn" onClick={onPickFiles} title="View files from this device without uploading">
+              <button class="gallery-btn" onClick={onPickFiles} title="View files from this device without uploading them">
                 <FontAwesomeIcon icon={faFolderOpen} />
                 <span>Open local files</span>
-              </button>
-              <button class="gallery-btn" onClick={onOpenStorage} title="Connect a local folder or URL list">
-                <FontAwesomeIcon icon={faPlug} />
-                <span>Connect folder / URL</span>
               </button>
             </div>
           </section>

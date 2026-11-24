@@ -1,26 +1,20 @@
 /**
- * Storage Sources List Component
- * 
- * Displays connected storage sources with status indicators.
- * Allows reconnecting, refreshing, and removing sources.
+ * Collections list (side panel)
+ *
+ * Lists the server collections with status, refresh, upload and delete.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'preact/hooks';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
-  faFolder,
   faCloud,
   faPlus,
   faTrash,
   faSync,
-  faCheck,
   faExclamationTriangle,
   faSpinner,
   faChevronDown,
-  faUnlock,
   faUpload,
-  faLink,
-  faPen,
   faEllipsisVertical,
 } from '@fortawesome/free-solid-svg-icons';
 import {
@@ -28,23 +22,21 @@ import {
   onSourceChange,
   deleteSource,
   touchSource,
-  setDefaultSource,
   deleteServerCollection,
+  createServerCollection,
+  syncServerSources,
+  registerSource,
+  unregisterSource,
 } from '../storage/index.js';
 import { useStore } from '../store';
 import { getSupportedExtensions, getFormatAccept } from '../formats/index.js';
-import ConnectStorageDialog from './ConnectStorageDialog';
 
 const TYPE_ICONS = {
-  'local-folder': faFolder,
   'server-collection': faCloud,
-  'public-url': faLink,
 };
 
 const TYPE_LABELS = {
-  'local-folder': 'Local',
   'server-collection': 'Server',
-  'public-url': 'URL',
 };
 
 // Thumbnail images accepted by the server (attached to the scan with the same base name)
@@ -61,7 +53,7 @@ const formatEta = (seconds) => {
 /**
  * Individual source item with controls
  */
-function SourceItem({ source, onSelect, onRemove, onEditSource, expanded, onToggleExpand, isActive }) {
+function SourceItem({ source, onSelect, onRemove, expanded, onToggleExpand, isActive }) {
   const [status, setStatus] = useState('checking');
   const [assetCount, setAssetCount] = useState(source.getAssets().length);
   const [isLoading, setIsLoading] = useState(false);
@@ -171,27 +163,6 @@ function SourceItem({ source, onSelect, onRemove, onEditSource, expanded, onTogg
     let cancelled = false;
 
     const checkStatus = async () => {
-      // For local folders, NEVER try to auto-connect after browser restart.
-      // Loading handles from IndexedDB can crash Chrome.
-      // Just show "needs permission" and let user click to reconnect.
-      if (source.type === 'local-folder') {
-        // Only check if we have an in-memory handle from this session
-        if (source.isConnected()) {
-          if (!cancelled) {
-            setStatus('connected');
-            setAssetCount(source.getAssets().length);
-          }
-        } else {
-          // Don't call connect() - that's safe now but still unnecessary.
-          // Just show needs-permission and let user click to reconnect.
-          if (!cancelled) {
-            setStatus('needs-permission');
-          }
-        }
-        return;
-      }
-
-      // For other source types (server, URL), use normal flow
       try {
         if (source.isConnected()) {
           if (!cancelled) {
@@ -214,15 +185,13 @@ function SourceItem({ source, onSelect, onRemove, onEditSource, expanded, onTogg
           } catch (e) {
             console.warn('Failed to list assets:', e);
           }
-        } else if (result.needsPermission) {
-          setStatus('needs-permission');
         } else {
           setStatus('disconnected');
-        } 
+        }
       } catch (err) {
         console.warn('Source status check failed:', err);
         if (!cancelled) {
-          setStatus('needs-permission');
+          setStatus('error');
         }
       }
     };
@@ -242,74 +211,17 @@ function SourceItem({ source, onSelect, onRemove, onEditSource, expanded, onTogg
     setStatus('connecting');
 
     try {
-      // For local folders, reconnect should request permission since this is a user gesture
-      if (source.type === 'local-folder' && typeof source.requestPermission === 'function') {
-        const result = await source.requestPermission();
-        if (result.success) {
-          setStatus('connected');
-          const assets = await source.listAssets();
-          setAssetCount(assets.length);
-          await touchSource(source.id);
-        } else if (result.needsPermission) {
-          setStatus('needs-permission');
-        } else {
-          setStatus('error');
-          if (result?.error) {
-            alert(result.error);
-          }
-        }
+      const result = await source.connect(false);
+      if (result.success) {
+        setStatus('connected');
+        const assets = await source.listAssets();
+        setAssetCount(assets.length);
+        await touchSource(source.id);
       } else {
-        // For other source types, use regular connect
-        const result = await source.connect(false);
-        if (result.success) {
-          setStatus('connected');
-          const assets = await source.listAssets();
-          setAssetCount(assets.length);
-          await touchSource(source.id);
-        } else if (result.needsPermission) {
-          setStatus('needs-permission');
-        } else {
-          setStatus('error');
-        }
+        setStatus('error');
       }
     } catch (err) {
       console.error('Reconnect failed:', err);
-      setStatus('error');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [source]);
-
-  const handleRequestPermission = useCallback(async (e) => {
-    e.stopPropagation();
-    setIsLoading(true);
-
-    try {
-      if (source.type === 'local-folder') {
-        if (!('showDirectoryPicker' in window)) {
-          alert('Local folder access is not supported in this browser. Try Chrome or Edge.');
-          setStatus('error');
-          return;
-        }
-
-        if (typeof source.requestPermission === 'function') {
-          const result = await source.requestPermission();
-          if (result.success) {
-            setStatus('connected');
-            const assets = await source.listAssets();
-            setAssetCount(assets.length);
-            await touchSource(source.id);
-          } else {
-            setStatus('error');
-            if (result?.error) {
-              alert(result.error);
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Permission request failed:', err);
-      alert('Could not grant access. Please try again or re-add the folder.');
       setStatus('error');
     } finally {
       setIsLoading(false);
@@ -369,7 +281,7 @@ function SourceItem({ source, onSelect, onRemove, onEditSource, expanded, onTogg
     const isServer = source.type === 'server-collection';
     const msg = isServer
       ? `Delete collection "${source.name}" and all its files from the server? This cannot be undone.`
-      : `Remove "${source.name}" from connected sources?`;
+      : `Remove "${source.name}"?`;
     if (confirm(msg)) {
       if (isServer) {
         try {
@@ -391,8 +303,6 @@ function SourceItem({ source, onSelect, onRemove, onEditSource, expanded, onTogg
   }, [source, onSelect]);
 
   const isConnected = status === 'connected';
-  const needsPermission = status === 'needs-permission';
-  const isDefault = Boolean(source?.config?.isDefault);
   const showUploadProgress = isUploading && uploadProgress;
 
   // ETA countdown state: set when progress updates, tick down every second while uploading
@@ -421,26 +331,6 @@ function SourceItem({ source, onSelect, onRemove, onEditSource, expanded, onTogg
 
   const etaLabel = showUploadProgress ? formatEta(etaSeconds) : '';
 
-  const handleSetDefault = useCallback(async (e) => {
-    e.stopPropagation();
-
-    setIsLoading(true);
-    try {
-      // Toggle: if already default, clear it; otherwise set it
-      await setDefaultSource(isDefault ? null : source.id);
-    } catch (err) {
-      console.warn('Failed to set default source:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isDefault, source?.id]);
-
-  const handleEditPublicUrl = useCallback((e) => {
-    e.stopPropagation();
-    if (source.type !== 'public-url') return;
-    onEditSource?.(source);
-  }, [onEditSource, source]);
-
   return (
     <>
       <input
@@ -463,7 +353,7 @@ function SourceItem({ source, onSelect, onRemove, onEditSource, expanded, onTogg
                 <span class="source-name-text">{source.name}</span>
               </div>
               <div class="source-meta">
-                <FontAwesomeIcon icon={TYPE_ICONS[source.type] || faFolder} className="source-type-icon" />
+                <FontAwesomeIcon icon={TYPE_ICONS[source.type] || faCloud} className="source-type-icon" />
                 <span class="source-type">{TYPE_LABELS[source.type]}</span>
                 {isConnected && assetCount > 0 && (
                   <span class="source-count">{assetCount}</span>
@@ -483,8 +373,6 @@ function SourceItem({ source, onSelect, onRemove, onEditSource, expanded, onTogg
                 </div>
               ) : isConnected ? (
                 <></>
-              ) : needsPermission ? (
-                <FontAwesomeIcon icon={faUnlock} className="status-warning" />
               ) : (
                 <FontAwesomeIcon icon={faExclamationTriangle} className="status-error" />
               )}
@@ -509,16 +397,7 @@ function SourceItem({ source, onSelect, onRemove, onEditSource, expanded, onTogg
 
       {expanded && (
         <div class="source-actions" onClick={(e) => e.stopPropagation()}>
-          {needsPermission ? (
-            <button 
-              class="source-action-btn" 
-              onClick={handleRequestPermission}
-              title="Grant permission"
-            >
-              <FontAwesomeIcon icon={faUnlock} />
-              <span>Grant Access</span>
-            </button>
-          ) : !isConnected ? (
+          {!isConnected ? (
             <button 
               class="source-action-btn" 
               onClick={handleReconnect}
@@ -535,24 +414,6 @@ function SourceItem({ source, onSelect, onRemove, onEditSource, expanded, onTogg
             >
               <FontAwesomeIcon icon={faSync} />
               <span>Refresh</span>
-            </button>
-          )}
-          <button
-            class={`source-action-btn ${isDefault ? 'default' : ''}`}
-            onClick={handleSetDefault}
-            title={isDefault ? 'Clear default collection' : 'Set as default collection'}
-          >
-            {isDefault && <FontAwesomeIcon icon={faCheck} />}
-            <span>{isDefault ? 'Default' : 'Set Default'}</span>
-          </button>
-          {source.type === 'public-url' && (
-            <button
-              class="source-action-btn"
-              onClick={handleEditPublicUrl}
-              title="Edit URLs"
-            >
-              <FontAwesomeIcon icon={faPen} />
-              <span>Edit</span>
             </button>
           )}
           {source.type === 'server-collection' && (
@@ -586,11 +447,10 @@ function SourceItem({ source, onSelect, onRemove, onEditSource, expanded, onTogg
 /**
  * Storage sources list with collapsible toggle and add button
  */
-function StorageSourceList({ onAddSource, onSelectSource }) {
+function StorageSourceList({ onSelectSource }) {
   const [sources, setSources] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
   const [isListExpanded, setIsListExpanded] = useState(true);
-  const [editSource, setEditSource] = useState(null);
   const activeSourceId = useStore((state) => state.activeSourceId);
 
   // Load sources on mount and subscribe to changes
@@ -614,12 +474,15 @@ function StorageSourceList({ onAddSource, onSelectSource }) {
     }
   }, [expandedId]);
 
-  const handleEditSource = useCallback((source) => {
-    setEditSource(source);
-  }, []);
-
-  const handleCloseEdit = useCallback(() => {
-    setEditSource(null);
+  const handleAddCollection = useCallback(async () => {
+    const name = prompt('Name of the new collection');
+    if (!name) return;
+    try {
+      await createServerCollection(name);
+      await syncServerSources(registerSource, unregisterSource, getSourcesArray);
+    } catch (err) {
+      alert(`Could not create collection: ${err.message}`);
+    }
   }, []);
 
   return (
@@ -633,8 +496,8 @@ function StorageSourceList({ onAddSource, onSelectSource }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginRight: '-8px' }}>
           <button 
             class="add-source-btn" 
-            onClick={(e) => { e.stopPropagation(); onAddSource(); }} 
-            title="Add storage source"
+            onClick={(e) => { e.stopPropagation(); handleAddCollection(); }} 
+            title="New collection"
             style={{ width: '28px', height: '22px', fontSize: '11px' }}
           >
             <FontAwesomeIcon icon={faPlus} />
@@ -646,9 +509,9 @@ function StorageSourceList({ onAddSource, onSelectSource }) {
       <div class="group-content" style={{ display: isListExpanded ? 'flex' : 'none' }}>
         {sources.length === 0 ? (
           <div class="sources-empty">
-            <p>No storage sources connected</p>
-            <button class="add-source-link" onClick={onAddSource}>
-              <FontAwesomeIcon icon={faPlus} /> Connect storage
+            <p>No collections yet</p>
+            <button class="add-source-link" onClick={handleAddCollection}>
+              <FontAwesomeIcon icon={faPlus} /> New collection
             </button>
           </div>
         ) : (
@@ -661,7 +524,6 @@ function StorageSourceList({ onAddSource, onSelectSource }) {
                 expanded={expandedId === source.id}
                 onToggleExpand={() => handleToggleExpand(source.id)}
                 onSelect={onSelectSource}
-                onEditSource={handleEditSource}
                 onRemove={handleRemove}
               />
             ))}
@@ -669,14 +531,6 @@ function StorageSourceList({ onAddSource, onSelectSource }) {
         )}
       </div>
 
-      {editSource && (
-        <ConnectStorageDialog
-          isOpen={!!editSource}
-          onClose={handleCloseEdit}
-          onConnect={handleCloseEdit}
-          editSource={editSource}
-        />
-      )}
     </div>
   );
 }

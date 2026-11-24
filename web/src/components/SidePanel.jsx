@@ -10,7 +10,6 @@ import CameraControls from './CameraControls';
 import AnimationSettings from './AnimationSettings';
 import DebugSettings from './DebugSettings';
 import StorageSourceList from './StorageSourceList';
-import ConnectStorageDialog from './ConnectStorageDialog';
 import { loadFromStorageSource } from '../fileLoader';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faChevronLeft } from '@fortawesome/free-solid-svg-icons';
@@ -48,22 +47,6 @@ function SidePanel() {
       clearTimeout(hoverOpenTimeoutRef.current);
       hoverOpenTimeoutRef.current = null;
     }
-  }, []);
-  
-  // Storage dialog state
-  const [storageDialogOpen, setStorageDialogOpen] = useState(false);
-  
-  const handleOpenStorageDialog = useCallback(() => {
-    setStorageDialogOpen(true);
-  }, []);
-  
-  const handleCloseStorageDialog = useCallback(() => {
-    setStorageDialogOpen(false);
-  }, []);
-  
-  const handleSourceConnect = useCallback((source) => {
-    // Load assets from the newly connected source
-    loadFromStorageSource(source);
   }, []);
   
   const handleSelectSource = useCallback((source) => {
@@ -120,18 +103,11 @@ function SidePanel() {
         <AnimationSettings />
         {/* Storage sources */}
         <StorageSourceList 
-          onAddSource={handleOpenStorageDialog}
           onSelectSource={handleSelectSource}
         />
         <DebugSettings />
       </div>
       
-      {/* Connect to Storage dialog */}
-      <ConnectStorageDialog
-        isOpen={storageDialogOpen}
-        onClose={handleCloseStorageDialog}
-        onConnect={handleSourceConnect}
-      />
     </>
   );
 }
