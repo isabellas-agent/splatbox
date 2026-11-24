@@ -20,7 +20,7 @@ import {
   clearMetadataCamera,
 } from './cameraUtils.js';
 import { updateViewerAspectRatio, resize, isNavigationLockedRef, setNavigationLocked } from './fileLoader.js';
-import { setCurrentMesh, setOriginalImageAspect, requestRender, spark, scene } from './viewer.js';
+import { setCurrentMesh, setOriginalImageAspect, requestRender, spark, scene, camera } from './viewer.js';
 
 const getStoreState = () => useStore.getState();
 
@@ -57,7 +57,7 @@ const loadSplatFileFast = async (asset) => {
 
     setCurrentMesh(entry.mesh);
     viewerEl.classList.add('has-mesh');
-    spark.update({ scene });
+    spark.update({ scene, camera });
 
     const { cameraMetadata, focusDistanceOverride } = entry;
 

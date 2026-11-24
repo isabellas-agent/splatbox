@@ -241,7 +241,8 @@ export const initViewer = (viewerEl) => {
   };
 
   // Spark renderer
-  spark = new SparkRenderer({ renderer });
+  // Re-render when Spark finishes an async sort/LoD update (render loop is on-demand)
+  spark = new SparkRenderer({ renderer, onDirty: () => requestRender() });
   scene.add(spark);
 
   // Raycaster for double-click

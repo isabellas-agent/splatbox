@@ -222,7 +222,10 @@ export const loadSplatFile = async (assetOrFile, options = {}) => {
   const hasFileOrSource = asset.file || (asset.sourceId && asset._remoteAsset);
   if (!hasFileOrSource) return;
 
-  await hydrateAssetPreviewFromStorage(asset);
+  const cachedPreview = await hydrateAssetPreviewFromStorage(asset);
+  if (cachedPreview?.blob) {
+    uploadPreviewToServer(asset, cachedPreview.blob, cachedPreview.format);
+  }
 
   // Cancel any in-flight slide transitions before starting a new load
   // This prevents race conditions where previous animation state corrupts the new load
@@ -346,7 +349,7 @@ export const loadSplatFile = async (assetOrFile, options = {}) => {
 
     setCurrentMesh(entry.mesh);
     viewerEl.classList.add("has-mesh");
-    spark.update({ scene });
+    spark.update({ scene, camera });
 
     // Fire-and-forget neighbor preloading (don't block current asset)
     const neighborIds = new Set(neighborAssets.map((neighbor) => neighbor.id));
@@ -357,7 +360,7 @@ export const loadSplatFile = async (assetOrFile, options = {}) => {
       .filter((neighbor) => neighbor.id !== asset.id)
       .forEach((neighbor) => {
         ensureSplatEntry(neighbor)
-          .then(() => spark.update({ scene }))
+          .then(() => spark.update({ scene, camera }))
           .catch((err) => {
             console.warn(`[SplatManager] Failed to preload ${neighbor.name}:`, err);
           });
@@ -799,7 +802,7 @@ export const handleMultipleFiles = async (files) => {
   resetSplatManager();
   setCurrentMesh(null);
   hasLoadedFirstAsset = false; // Reset first load flag for new asset list
-  spark.update({ scene });
+  spark.update({ scene, camera });
 
   // Update store with assets
   store.setAssets(result.assets);
@@ -953,7 +956,7 @@ export const loadFromStorageSource = async (source, { startIndex = 0 } = {}) => 
     resetSplatManager();
     setCurrentMesh(null);
     hasLoadedFirstAsset = false; // Reset first load flag for new source
-    spark.update({ scene });
+    spark.update({ scene, camera });
     
     // Clear background
     clearBackground();
@@ -983,6 +986,8 @@ export const loadFromStorageSource = async (source, { startIndex = 0 } = {}) => 
         const storedPreview = await hydrateAssetPreviewFromStorage(asset);
         if (storedPreview?.blob) {
           store.updateAssetPreview(i, asset.preview);
+          // Thumbnail only cached in this browser: share it via the server
+          uploadPreviewToServer(asset, storedPreview.blob, storedPreview.format);
           continue;
         }
 

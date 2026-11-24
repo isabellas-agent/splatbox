@@ -3,21 +3,47 @@
 Self-hosted gallery and manager for Gaussian splats (`.ply`, `.sog`, `.spz`, `.splat`, `.ksplat`),
 with a WebXR viewer that runs in the Quest 3 browser. One container, one `/data` volume, no external services.
 
-- **Gallery start screen** in any browser: all collections as a grid of scans with thumbnails, search,
-  collection filter, create / rename / delete collections and upload into them. Click a scan to open it.
-- **Viewer + VR mode** (Quest controls: grip to grab, thumbsticks to rotate/move, scale), served by the app itself.
+- **Gallery start screen** in any browser: all collections as a grid of scans with thumbnails, search
+  (name, title, description, tags), collection and tag filters, create / rename / delete collections and
+  upload into them. Click a scan to open it.
+- **Manage scans**: per-scan title, description and tags (pencil on a card); **Select** mode for bulk
+  move / copy to another collection, tagging and delete. Thumbnails and metadata move with the scan.
+- **Viewer + VR mode** (Spark 2 renderer, `.ply` / `.sog` / `.spz` / `.splat` / `.ksplat`), served by the app itself.
   The grid button (bottom left) goes back to the gallery.
+- **In-VR collection browser**: a floating panel with the scans of the current collection, so you can switch
+  scans (and collections) without leaving VR.
 - **Thumbnails** are rendered in the browser the first time a scan is opened and stored on the server
   (`<name>.webp` next to the scan), so every device sees them.
 - Per-collection `manifest.json` (manifest v1) at `/files/collections/<id>/manifest.json`.
 
 ![splatbox gallery](docs/screenshot.png)
 
-*Gallery start screen: two collections, thumbnails generated in the browser (synthetic demo splats).*
+*Gallery start screen (synthetic demo splats).*
+
+![managing scans](docs/gallery-manage.png)
+
+*Select mode with titles, descriptions and tags; the bar at the bottom moves, copies, tags or deletes the selection.*
 
 ![splatbox viewer](docs/viewer.png)
 
 *Viewer: scan 2 of 3 in the collection, with previous/next and the gallery button.*
+
+![in-VR panel](docs/vr-panel.png)
+
+*The in-VR collection panel (rendered on a flat page for the screenshot).*
+
+## Quest controls (VR)
+
+| Input | Action |
+|---|---|
+| Left trigger | Open / close the collection panel |
+| Trigger (either hand) while the panel is open | Click what the controller ray points at: a scan opens it, ◀ ▶ in the header switch collection, ✕ closes |
+| Right thumbstick left/right (panel open) | Previous / next page |
+| Grip (hold) | Grab and move / rotate the scan |
+| Thumbstick up/down (panel closed) | Scale |
+| Right B / A | Next / previous scan |
+| Left Y / X | Scale up / down in steps |
+| Thumbstick click | Right: reset view, left: reset rotation |
 
 ## Run
 
@@ -51,7 +77,10 @@ cd server && DATA_DIR=../data WEB_DIR=../web/dist npm start
 
 `GET/POST /api/collections`, `PATCH/DELETE /api/collections/:id`,
 `PUT /api/collections/:id/assets/:filename` (raw body, `application/octet-stream`),
-`DELETE /api/collections/:id/assets` (`{"paths": [...]}`), `POST /api/collections/:id/rescan?apply=1`,
+`DELETE /api/collections/:id/assets` (`{"paths": [...]}`),
+`PATCH /api/collections/:id/assets` (`{"paths": [...], "title", "description", "tags": [...], "addTags": [...], "removeTags": [...]}`),
+`POST /api/collections/:id/assets/transfer` (`{"paths": [...], "target": "<collection id>", "mode": "move"|"copy"}`),
+`POST /api/collections/:id/rescan?apply=1`,
 `GET /api/health`.
 
 ## License

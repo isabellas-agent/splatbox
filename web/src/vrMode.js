@@ -13,7 +13,9 @@ import {
 } from "./viewer.js";
 import { useStore } from "./store.js";
 import { restoreHomeView } from "./cameraUtils.js";
-import { loadNextAsset, loadPrevAsset } from "./fileLoader.js";
+import { loadNextAsset, loadPrevAsset, loadAssetByIndex, loadFromStorageSource } from "./fileLoader.js";
+import { VrCollectionPanel } from "./vrPanel.js";
+import { getSourcesArray } from "./storage/index.js";
 
 let vrButton = null;
 let xrHands = null;
@@ -22,6 +24,13 @@ let initialModelScale = null;
 let initialModelPosition = null;
 let initialModelQuaternion = null; // Store initial rotation
 let keyListenerAttached = false;
+
+// In-VR collection browser
+let vrPanel = null;
+const pointerRays = new Map(); // controller -> THREE.Line
+const triggerWasPressed = { left: false, right: false, unknown: false };
+let lastPageFlipMs = 0;
+const PAGE_FLIP_COOLDOWN_MS = 350;
 
 // Controller tracking
 let xrControllers = [];
@@ -175,6 +184,64 @@ const onControllerDisconnected = (event) => {
   controller.userData.handedness = null;
 };
 
+const switchCollection = async (dir) => {
+  const sources = getSourcesArray()
+    .filter((s) => s.type === "server-collection")
+    .sort((a, b) => a.name.localeCompare(b.name));
+  if (sources.length < 2) return;
+  const activeId = useStore.getState().activeSourceId;
+  const i = Math.max(0, sources.findIndex((s) => s.id === activeId));
+  const next = sources[(i + dir + sources.length) % sources.length];
+  await loadFromStorageSource(next);
+};
+
+const ensurePanel = () => {
+  if (!vrPanel) {
+    vrPanel = new VrCollectionPanel({
+      onOpenAsset: async (index) => {
+        vrPanel.close();
+        await loadAssetByIndex(index);
+      },
+      onSwitchCollection: switchCollection,
+    });
+  }
+  if (!scene.children.includes(vrPanel.mesh)) scene.add(vrPanel.mesh);
+  return vrPanel;
+};
+
+const removePanel = () => {
+  if (vrPanel) {
+    vrPanel.close();
+    scene.remove(vrPanel.mesh);
+  }
+};
+
+const addPointerRay = (controller) => {
+  if (pointerRays.has(controller)) return;
+  const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]);
+  const material = new THREE.LineBasicMaterial({ color: 0x6ee7ff, transparent: true, opacity: 0.85, depthTest: false });
+  const line = new THREE.Line(geometry, material);
+  line.renderOrder = 10001;
+  line.visible = false;
+  controller.add(line);
+  pointerRays.set(controller, line);
+};
+
+const updatePointerRays = () => {
+  const panelOpen = !!vrPanel?.visible;
+  let hit = null;
+  if (panelOpen) {
+    xrControllers.forEach((c) => c.updateMatrixWorld(true));
+    hit = vrPanel.updatePointer(xrControllers);
+  }
+  for (const [controller, line] of pointerRays) {
+    line.visible = panelOpen;
+    if (!panelOpen) continue;
+    const len = hit?.controller === controller ? hit.distance : 1.5;
+    line.scale.set(1, 1, Math.max(0.05, len));
+  }
+};
+
 const setupControllers = () => {
   // Initialize controller objects
   if (xrControllers.length === 0 && renderer?.xr) {
@@ -183,6 +250,7 @@ const setupControllers = () => {
       controller.addEventListener('connected', onControllerConnected);
       controller.addEventListener('disconnected', onControllerDisconnected);
       xrControllers.push(controller);
+      addPointerRay(controller);
       scene.add(controller);
     }
   }
@@ -190,6 +258,13 @@ const setupControllers = () => {
 
 const removeControllers = () => {
   xrControllers.forEach(c => {
+    const ray = pointerRays.get(c);
+    if (ray) {
+      c.remove(ray);
+      ray.geometry.dispose();
+      ray.material.dispose();
+      pointerRays.delete(c);
+    }
     c.removeEventListener('connected', onControllerConnected);
     c.removeEventListener('disconnected', onControllerDisconnected);
     scene.remove(c);
@@ -209,6 +284,7 @@ const setupVrAnimationLoop = () => {
     }
 
     handleVrGamepadInput(dt);
+    updatePointerRays();
 
     renderer.render(scene, camera);
   });
@@ -257,6 +333,28 @@ const handleVrGamepadInput = (dt) => {
     const isPressed = (idx) => buttons[idx]?.pressed ?? false;
 
     const controllerObject = xrControllers.find(c => c.userData.handedness === hand);
+
+    // TRIGGER: left toggles the collection panel; while it is open either
+    // trigger clicks what the controller points at.
+    const triggerPressed = (buttons[BTN_TRIGGER]?.value ?? 0) > 0.6;
+    if (triggerPressed && !triggerWasPressed[hand]) {
+      const panel = ensurePanel();
+      const consumed = panel.visible && controllerObject ? panel.select(controllerObject) : false;
+      if (!consumed && hand === "left") {
+        panel.toggle(renderer.xr.getCamera());
+      }
+    }
+    triggerWasPressed[hand] = triggerPressed;
+
+    // While the panel is open the right thumbstick pages instead of scaling
+    if (vrPanel?.visible) {
+      const stickX = axes[AXIS_THUMBSTICK_X] ?? 0;
+      if (hand === "right" && Math.abs(stickX) > 0.7 && now - lastPageFlipMs > PAGE_FLIP_COOLDOWN_MS) {
+        vrPanel.changePage(stickX > 0 ? 1 : -1);
+        lastPageFlipMs = now;
+      }
+    }
+
     const gripValue = buttons[BTN_GRIP]?.value ?? 0;
     const isGrabbing = gripValue > 0.5;
 
@@ -278,8 +376,8 @@ const handleVrGamepadInput = (dt) => {
     } else {
       grabState[hand].active = false;
 
-      // THUMBSTICK SCALING (When not grabbing)
-      if (Math.abs(stickY) > STICK_DEADZONE) {
+      // THUMBSTICK SCALING (When not grabbing and the panel is closed)
+      if (!vrPanel?.visible && Math.abs(stickY) > STICK_DEADZONE) {
         // stickY is -1 for Up (increase), 1 for Down (decrease)
         // Invert stickY so Up is positive factor
         const direction = -stickY;
@@ -363,6 +461,8 @@ const handleSessionStart = () => {
   store.setVrModelScale(1);
   ensureHands();
   setupControllers();
+  ensurePanel();
+  triggerWasPressed.left = triggerWasPressed.right = triggerWasPressed.unknown = false;
   setupVrAnimationLoop();
 
   if (!keyListenerAttached) {
@@ -379,6 +479,7 @@ const handleSessionEnd = () => {
   if (controls) controls.enabled = true;
   restoreModelTransform();
   removeHands();
+  removePanel();
   removeControllers();
   if (keyListenerAttached) {
     window.removeEventListener("keydown", handleScaleKeydown);

@@ -3875,6 +3875,11 @@ select option {
   resize: vertical;
 }
 
+.gallery-field select {
+  text-align: left;
+  text-align-last: left;
+}
+
 .gallery-field select option {
   background: #121722;
 }
@@ -3888,4 +3893,8 @@ select option {
 .gallery-hint {
   font-size: 12px !important;
   color: rgba(230, 236, 248, 0.5) !important;
+}
+
+.gallery-overlay.is-selecting .gallery {
+  padding-bottom: 130px;
 }

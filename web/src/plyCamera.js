@@ -1,4 +1,3 @@
-import { PlyReader } from "@sparkjsdev/spark";
 import { buildCameraMetadata } from "./cameraMetadata.js";
 
 const FIELD_BYTES = {
@@ -149,11 +148,75 @@ const readSinglePropertyElement = (element, dataView, elementOffset, littleEndia
   return { propertyName, values, nextOffset: offset };
 };
 
-export const readPlyCamera = async (fileBytes) => {
-  const ply = new PlyReader({ fileBytes });
-  await ply.parseHeader();
+const TYPE_ALIASES = {
+  int8: "char",
+  uint8: "uchar",
+  int16: "short",
+  uint16: "ushort",
+  int32: "int",
+  uint32: "uint",
+  float32: "float",
+  float64: "double",
+};
+const normType = (t) => TYPE_ALIASES[t] || t;
 
-  if (!ply.data) return null;
+/**
+ * Minimal binary PLY header parser (Spark 2.x no longer exports PlyReader).
+ * Returns elements in file order, the data section as a DataView, endianness
+ * and header comments; null for ASCII or malformed files.
+ */
+export const parsePlyHeader = (fileBytes) => {
+  const bytes = fileBytes instanceof Uint8Array ? fileBytes : new Uint8Array(fileBytes);
+  const limit = Math.min(bytes.length, 1 << 20);
+  const marker = "end_header";
+  let headerEnd = -1;
+  for (let i = 0; i < limit - marker.length; i += 1) {
+    if (bytes[i] === 0x65 /* e */ && String.fromCharCode(...bytes.subarray(i, i + marker.length)) === marker) {
+      let j = i + marker.length;
+      if (bytes[j] === 0x0d) j += 1;
+      if (bytes[j] === 0x0a) j += 1;
+      headerEnd = j;
+      break;
+    }
+  }
+  if (headerEnd < 0) return null;
+  const header = new TextDecoder().decode(bytes.subarray(0, headerEnd));
+  const lines = header.split(/\r?\n/);
+  if (lines[0].trim() !== "ply") return null;
+
+  const elements = {};
+  const comments = [];
+  let format = null;
+  let current = null;
+  for (const raw of lines.slice(1)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const [kw, ...rest] = line.split(/\s+/);
+    if (kw === "format") format = rest[0];
+    else if (kw === "comment") comments.push(line.slice(8));
+    else if (kw === "element") {
+      current = { name: rest[0], count: Number(rest[1]), properties: {} };
+      elements[rest[0]] = current;
+    } else if (kw === "property" && current) {
+      if (rest[0] === "list") {
+        current.properties[rest[3]] = { isList: true, countType: normType(rest[1]), type: normType(rest[2]) };
+      } else {
+        current.properties[rest[1]] = { isList: false, type: normType(rest[0]) };
+      }
+    }
+  }
+  if (format !== "binary_little_endian" && format !== "binary_big_endian") return null;
+  return {
+    elements,
+    comments,
+    littleEndian: format === "binary_little_endian",
+    data: new DataView(bytes.buffer, bytes.byteOffset + headerEnd, bytes.length - headerEnd),
+  };
+};
+
+export const readPlyCamera = async (fileBytes) => {
+  const ply = parsePlyHeader(fileBytes);
+  if (!ply?.data) return null;
 
   const wanted = new Set(["intrinsic", "extrinsic", "image_size", "color_space"]);
   const raw = {};

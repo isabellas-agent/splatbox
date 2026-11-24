@@ -540,7 +540,7 @@ function Gallery({ show, canReturn, onReturn, onOpenAsset, onOpenSource, onPickF
   if (!show) return null;
 
   return (
-    <div class="gallery-overlay">
+    <div class={`gallery-overlay ${selectMode ? 'is-selecting' : ''}`}>
       <div class="gallery">
         <header class="gallery-header">
           <div class="gallery-brand">

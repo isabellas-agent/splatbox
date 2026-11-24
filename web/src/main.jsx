@@ -40,6 +40,12 @@ const startApp = async () => {
 
 startApp();
 
+// Debug hook: open /#vrpanel-preview to expose the in-VR panel module for
+// rendering it on a normal page (used for screenshots/tests without a headset).
+if (window.location.hash === '#vrpanel-preview') {
+  import('./vrPanel.js').then((m) => { window.__splatboxVrPanel = m; });
+}
+
 // Global error handlers to capture unhandled rejections and errors
 window.addEventListener('unhandledrejection', (event) => {
 	console.error('Unhandled promise rejection:', event.reason, event);
