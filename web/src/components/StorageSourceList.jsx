@@ -6,7 +6,6 @@
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'preact/hooks';
-import { createPortal } from 'preact/compat';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faFolder,
@@ -21,7 +20,6 @@ import {
   faUnlock,
   faUpload,
   faLink,
-  faTimes,
   faPen,
   faEllipsisVertical,
 } from '@fortawesome/free-solid-svg-icons';
@@ -35,7 +33,6 @@ import {
 } from '../storage/index.js';
 import { useStore } from '../store';
 import { getSupportedExtensions, getFormatAccept } from '../formats/index.js';
-import { testSharpCloud } from '../testSharpCloud';
 import ConnectStorageDialog from './ConnectStorageDialog';
 
 const TYPE_ICONS = {
@@ -50,7 +47,8 @@ const TYPE_LABELS = {
   'public-url': 'URL',
 };
 
-const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.avif', '.tif', '.tiff', '.heic'];
+// Thumbnail images accepted by the server (attached to the scan with the same base name)
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
 
 const formatEta = (seconds) => {
   const remaining = Math.max(0, Math.ceil(seconds));
@@ -69,20 +67,13 @@ function SourceItem({ source, onSelect, onRemove, onEditSource, expanded, onTogg
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
-  const [showConvertModal, setShowConvertModal] = useState(false);
-  const [pendingImageFiles, setPendingImageFiles] = useState([]);
-  const [pendingOtherFiles, setPendingOtherFiles] = useState([]);
   const uploadInputRef = useRef(null);
   const supportedExtensions = useMemo(() => getSupportedExtensions(), []);
   const acceptString = useMemo(() => getFormatAccept(), []);
   const combinedAccept = useMemo(() => {
     const imageList = IMAGE_EXTENSIONS.join(',');
-    return acceptString ? `${acceptString},${imageList},image/*` : `${imageList},image/*`;
+    return acceptString ? `${acceptString},${imageList}` : imageList;
   }, [acceptString]);
-  const collectionPrefix = useMemo(() => {
-    const collectionId = source?.config?.config?.collectionId;
-    return collectionId ? `collections/${collectionId}/assets` : 'collections/default/assets';
-  }, [source?.config?.config?.collectionId]);
 
 
   const refreshAssets = useCallback(async () => {
@@ -112,14 +103,13 @@ function SourceItem({ source, onSelect, onRemove, onEditSource, expanded, onTogg
   const isSupportedFile = useCallback((file) => {
     if (!file?.name) return false;
     const ext = file.name.toLowerCase().match(/\.[^.]+$/)?.[0] || '';
-    return supportedExtensions.includes(ext);
+    return supportedExtensions.includes(ext) || IMAGE_EXTENSIONS.includes(ext);
   }, [supportedExtensions]);
 
   const isImageFile = useCallback((file) => {
     if (!file) return false;
-    const type = file.type || '';
     const name = (file.name || '').toLowerCase();
-    return type.startsWith('image/') || IMAGE_EXTENSIONS.some((ext) => name.endsWith(ext));
+    return IMAGE_EXTENSIONS.some((ext) => name.endsWith(ext));
   }, []);
 
   const processUploads = useCallback(async (files) => {
@@ -130,7 +120,7 @@ function SourceItem({ source, onSelect, onRemove, onEditSource, expanded, onTogg
     const hasImages = valid.some(isImageFile);
 
     if (valid.length === 0) {
-      alert(`No supported files. Supported: ${supportedExtensions.join(', ')}`);
+      alert(`No supported files. Supported: ${[...supportedExtensions, ...IMAGE_EXTENSIONS].join(', ')}`);
       return;
     }
 
@@ -172,75 +162,9 @@ function SourceItem({ source, onSelect, onRemove, onEditSource, expanded, onTogg
 
   const handleFilesSelected = useCallback(async (files) => {
     if (!files?.length || source.type !== 'server-collection') return;
-
-    const imageFiles = files.filter(isImageFile);
-    const otherFiles = files.filter((file) => !isImageFile(file));
-
-    if (imageFiles.length > 0) {
-      setPendingImageFiles(imageFiles);
-      setPendingOtherFiles(otherFiles);
-      setShowConvertModal(true);
-      return;
-    }
-
+    // Images are stored next to scans with the same base name and used as thumbnails
     await processUploads(files);
-  }, [isImageFile, processUploads, source.type]);
-
-  const handleConfirmConvert = useCallback(async () => {
-    if (!pendingImageFiles.length) {
-      setShowConvertModal(false);
-      return;
-    }
-
-    setShowConvertModal(false);
-    setIsLoading(true);
-    setIsUploading(true);
-    setUploadProgress({ completed: 0, total: pendingImageFiles.length });
-    console.log('convert start', { total: pendingImageFiles.length });
-
-    try {
-      const results = await testSharpCloud(pendingImageFiles, {
-        prefix: collectionPrefix,
-        onProgress: (progress) => {
-          console.log('convert progress', progress);
-          setUploadProgress(progress);
-        },
-      });
-      const failures = results.filter((r) => !r.ok);
-
-      if (pendingOtherFiles.length > 0) {
-        await processUploads(pendingOtherFiles);
-      }
-
-      const anySuccess = results.some((r) => r.ok);
-      if (anySuccess) {
-        await refreshAssets();
-      }
-
-      if (failures.length > 0) {
-        console.warn('Some conversions failed:', failures);
-      }
-    } catch (err) {
-      console.error('Convert/upload failed:', err);
-    } finally {
-      setPendingImageFiles([]);
-      setPendingOtherFiles([]);
-      setIsLoading(false);
-      setIsUploading(false);
-      setUploadProgress(null);
-    }
-  }, [collectionPrefix, pendingImageFiles, pendingOtherFiles, processUploads, refreshAssets]);
-
-  const handleCancelConvert = useCallback(async () => {
-    setShowConvertModal(false);
-    if (pendingOtherFiles.length > 0) {
-      await processUploads(pendingOtherFiles);
-    }
-    setPendingImageFiles([]);
-    setPendingOtherFiles([]);
-    setIsUploading(false);
-    setUploadProgress(null);
-  }, [pendingOtherFiles, processUploads]);
+  }, [processUploads, source.type]);
 
   // Check connection status on mount
   useEffect(() => {
@@ -655,35 +579,6 @@ function SourceItem({ source, onSelect, onRemove, onEditSource, expanded, onTogg
       )}
       </div>
 
-      {showConvertModal && createPortal(
-        <div class="modal-overlay storage-dialog-overlay">
-          <div class="modal-content storage-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px' }}>
-            <button class="modal-close" onClick={handleCancelConvert}>
-              <FontAwesomeIcon icon={faTimes} />
-            </button>
-
-            <h2>Convert images?</h2>
-            <p class="dialog-subtitle">
-              Convert and upload {pendingImageFiles.length} image{pendingImageFiles.length === 1 ? '' : 's'} to this server collection?
-            </p>
-            
-            <div class="form-info">
-              <ul class="feature-list">
-                 <li><FontAwesomeIcon icon={faUpload} /> Files will be converted to splats in sog format via </li>
-                 <li><FontAwesomeIcon icon={faFolder} /><span>Saved on the server at: <i>{collectionPrefix}</i></span> </li>
-              </ul>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '24px' }}>
-              <button class="secondary-button" onClick={handleCancelConvert} style={{ height: '36px', padding: '0 16px', minWidth: '80px', marginTop: '0' }}>Cancel</button>
-              <button class="primary-button" onClick={handleConfirmConvert} style={{ height: '36px', padding: '0 16px' }}>
-                <FontAwesomeIcon icon={faUpload} /> Upload
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
     </>
   );
 }

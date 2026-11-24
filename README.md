@@ -9,9 +9,7 @@ with a WebXR viewer that runs in the Quest 3 browser. One container, one `/data`
   The grid button (bottom left) goes back to the gallery.
 - **Thumbnails** are rendered in the browser the first time a scan is opened and stored on the server
   (`<name>.webp` next to the scan), so every device sees them.
-- Per-collection `manifest.json` (browser-sharp manifest v1) at `/files/collections/<id>/manifest.json`.
-
-The viewer is derived from [browser-sharp](https://github.com/michael-mueller-git/browser-sharp) (`quest3` branch), with the Supabase/remote storage replaced by the built-in server.
+- Per-collection `manifest.json` (manifest v1) at `/files/collections/<id>/manifest.json`.
 
 ![splatbox gallery](docs/screenshot.png)
 

@@ -67,7 +67,7 @@ export async function buildApp(config, { logger = false } = {}) {
     decorateReply: false,
     dotfiles: 'deny',
     cacheControl: false,
-    setHeaders: (res) => res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate'),
+    setHeaders: (reply) => reply.header('Cache-Control', 'public, max-age=0, must-revalidate'),
   });
 
   // Web app
@@ -76,8 +76,8 @@ export async function buildApp(config, { logger = false } = {}) {
       root: config.webDir,
       prefix: '/',
       wildcard: true,
-      setHeaders: (res, p) => {
-        res.setHeader(
+      setHeaders: (reply, p) => {
+        reply.header(
           'Cache-Control',
           p.includes(`${path.sep}assets${path.sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache',
         );

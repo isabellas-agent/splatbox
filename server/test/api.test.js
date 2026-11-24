@@ -103,3 +103,26 @@ test('uploaded thumbnail is attached as the preview of the scan with the same ba
   assert.equal(manifest.assets.length, 1);
   assert.equal(manifest.assets[0].preview, 'assets/room.webp');
 });
+
+test('collection files are served with revalidation cache headers', async () => {
+  const { app } = await setup();
+  const c = (await app.inject({ method: 'POST', url: '/api/collections', payload: { name: 'Cache' } })).json();
+  const res = await app.inject(`/files/collections/${c.id}/manifest.json`);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['cache-control'], 'public, max-age=0, must-revalidate');
+});
+
+test('web app: hashed assets are immutable, index.html is revalidated', async () => {
+  const webDir = await fs.mkdtemp(path.join(os.tmpdir(), 'splatbox-web-'));
+  await fs.mkdir(path.join(webDir, 'assets'));
+  await fs.writeFile(path.join(webDir, 'index.html'), '<!doctype html>');
+  await fs.writeFile(path.join(webDir, 'assets', 'app-abc.js'), 'console.log(1)');
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'splatbox-'));
+  const app = await buildApp(loadConfig({ DATA_DIR: dataDir, WEB_DIR: webDir }));
+  const index = await app.inject('/');
+  assert.equal(index.statusCode, 200);
+  assert.equal(index.headers['cache-control'], 'no-cache');
+  const asset = await app.inject('/assets/app-abc.js');
+  assert.equal(asset.statusCode, 200);
+  assert.equal(asset.headers['cache-control'], 'public, max-age=31536000, immutable');
+});
