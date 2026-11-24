@@ -109,18 +109,18 @@ function DebugSettings() {
 
   /** Wipes IndexedDB image store and reloads */
   const handleWipeDb = useCallback(async () => {
-    const confirmed = window.confirm('Wipe IndexedDB "radia-viewer-storage"? This cannot be undone.');
+    const confirmed = window.confirm('Wipe IndexedDB "splatbox-storage"? This cannot be undone.');
     if (!confirmed) return;
 
     setWipingDb(true);
     try {
       await new Promise((resolve, reject) => {
-        const request = indexedDB.deleteDatabase('radia-viewer-storage');
+        const request = indexedDB.deleteDatabase('splatbox-storage');
         request.onsuccess = () => resolve();
         request.onerror = () => reject(request.error || new Error('Failed to delete database'));
         request.onblocked = () => console.warn('Delete blocked: close other tabs or reopen the app.');
       });
-      alert('IndexedDB radia-viewer-storage wiped. Reloading...');
+      alert('IndexedDB splatbox-storage wiped. Reloading...');
       window.location.reload();
     } catch (err) {
       console.error('DB wipe failed:', err);

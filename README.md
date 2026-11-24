@@ -3,19 +3,23 @@
 Self-hosted gallery and manager for Gaussian splats (`.ply`, `.sog`, `.spz`, `.splat`, `.ksplat`),
 with a WebXR viewer that runs in the Quest 3 browser. One container, one `/data` volume, no external services.
 
-- **Gallery / manage UI** in any browser: create collections, upload, delete, rescan.
+- **Gallery start screen** in any browser: all collections as a grid of scans with thumbnails, search,
+  collection filter, create / rename / delete collections and upload into them. Click a scan to open it.
 - **Viewer + VR mode** (Quest controls: grip to grab, thumbsticks to rotate/move, scale), served by the app itself.
+  The grid button (bottom left) goes back to the gallery.
+- **Thumbnails** are rendered in the browser the first time a scan is opened and stored on the server
+  (`<name>.webp` next to the scan), so every device sees them.
 - Per-collection `manifest.json` (browser-sharp manifest v1) at `/files/collections/<id>/manifest.json`.
 
 The viewer is derived from [browser-sharp](https://github.com/michael-mueller-git/browser-sharp) (`quest3` branch), with the Supabase/remote storage replaced by the built-in server.
 
-![splatbox web UI](docs/screenshot.png)
+![splatbox gallery](docs/screenshot.png)
 
-*Web UI with a server-hosted collection and a (synthetic demo) splat loaded.*
+*Gallery start screen: two collections, thumbnails generated in the browser (synthetic demo splats).*
 
-![asset browser](docs/asset-browser.png)
+![splatbox viewer](docs/viewer.png)
 
-*Asset browser: the thumbnail strip for the open collection ("1 / N" button). A full grid gallery is planned.*
+*Viewer: scan 2 of 3 in the collection, with previous/next and the gallery button.*
 
 ## Run
 
@@ -23,7 +27,7 @@ The viewer is derived from [browser-sharp](https://github.com/michael-mueller-gi
 docker run -d -p 8080:8080 -v splatbox-data:/data ghcr.io/isabellas-agent/splatbox:edge
 ```
 
-Open `http://localhost:8080`, use **Create a collection**, then upload files into it.
+Open `http://localhost:8080`, click **New collection**, then **Upload** files into it.
 WebXR only works on secure origins: terminate TLS at your ingress/proxy (the container serves plain HTTP).
 Make sure the proxy allows large request bodies (uploads are streamed) and passes `Range` requests.
 

@@ -4,6 +4,7 @@
 import { useStore } from './store.js';
 import { clearBackground } from './backgroundManager.js';
 import { savePreviewBlob } from './fileStorage.js';
+import { uploadPreviewToServer } from './storage/serverPreview.js';
 import { ensureSplatEntry, getSplatCache } from './splatManager.js';
 import { isImmersiveModeActive, pauseImmersiveMode, resumeImmersiveMode } from './immersiveMode.js';
 import {
@@ -186,6 +187,7 @@ export const generateAllPreviews = async (options = {}) => {
             height: result.height,
             format: result.format,
           });
+          uploadPreviewToServer(asset, result.blob, result.format);
           store.updateAssetPreview(i, asset.preview);
           successCount++;
           store.addLog(`[BatchPreview] ✓ ${asset.name}`);

@@ -6,7 +6,7 @@ import { setCapturePreviewFn } from "./assetManager.js";
 import { scene, renderer, composer, currentMesh, forceRenderNow, THREE, bgImageUrl } from "./viewer.js";
 
 /** Target height for generated previews (width auto-calculated) */
-const PREVIEW_TARGET_HEIGHT = 128;
+const PREVIEW_TARGET_HEIGHT = 256;
 
 /** Preferred WebP quality for compact previews */
 const PREVIEW_WEBP_QUALITY = 0.5;

@@ -21,6 +21,7 @@ import {
 } from "./viewer.js";
 import { applyPreviewBackground, captureAndApplyBackground, clearBackground } from "./backgroundManager.js";
 import { savePreviewBlob } from "./fileStorage.js";
+import { uploadPreviewToServer } from "./storage/serverPreview.js";
 import {
   fitViewToMesh,
   applyMetadataCamera,
@@ -592,6 +593,8 @@ export const loadSplatFile = async (assetOrFile, options = {}) => {
                   }).catch((err) => {
                     console.warn('Failed to save preview:', err);
                   });
+                  // Share the thumbnail with every device via the server collection
+                  uploadPreviewToServer(asset, previewResult.blob, previewResult.format);
                 })
                 .catch((err) => {
                   console.warn('Preview capture failed', err);
@@ -924,7 +927,7 @@ export const loadAssetByIndex = async (index) => {
  * 
  * @param {import('./storage/AssetSource.js').AssetSource} source
  */
-export const loadFromStorageSource = async (source) => {
+export const loadFromStorageSource = async (source, { startIndex = 0 } = {}) => {
   const store = getStoreState();
   
   try {
@@ -992,11 +995,12 @@ export const loadFromStorageSource = async (source) => {
     };
     loadPreviews(); // Don't await, run in background
     
-    // Load first asset
+    // Load the requested asset (first by default)
     if (result.assets.length > 0) {
-      setCurrentAssetIndexManager(0);
-      store.setCurrentAssetIndex(0);
-      await loadSplatFile(result.assets[0]);
+      const index = Math.min(Math.max(0, startIndex | 0), result.assets.length - 1);
+      setCurrentAssetIndexManager(index);
+      store.setCurrentAssetIndex(index);
+      await loadSplatFile(result.assets[index]);
     }
     
   } catch (error) {

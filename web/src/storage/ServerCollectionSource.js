@@ -169,6 +169,24 @@ export class ServerCollectionSource extends AssetSource {
     return { success: results.failed.length === 0, ...results };
   }
 
+  /**
+   * Upload a thumbnail for the asset at `assetPath`. Stored next to it with the
+   * same base name so the server attaches it as the asset's preview.
+   */
+  async uploadPreview(assetPath, blob, ext = 'webp') {
+    const base = getFilename(assetPath).replace(/\.[^.]+$/, '');
+    const res = await fetch(this._api(`/assets/${encodeURIComponent(`${base}.${ext}`)}`), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/octet-stream', 'X-Splatbox-Background': '1' },
+      body: blob,
+    });
+    if (!res.ok) {
+      console.warn(`[ServerCollection] Preview upload failed: ${res.status}`);
+      return false;
+    }
+    return true;
+  }
+
   async deleteAssets(items) {
     const list = Array.isArray(items) ? items : [items];
     const paths = list

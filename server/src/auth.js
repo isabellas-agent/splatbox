@@ -22,7 +22,10 @@ export function registerAuth(app, auth) {
         if (okUser && okPass) return;
       }
     }
-    reply.header('WWW-Authenticate', 'Basic realm="splatbox", charset="UTF-8"');
+    // Background requests (e.g. thumbnail uploads) must not pop up a login dialog
+    if (!req.headers['x-splatbox-background']) {
+      reply.header('WWW-Authenticate', 'Basic realm="splatbox", charset="UTF-8"');
+    }
     return reply.code(401).send('Authentication required');
   });
 }

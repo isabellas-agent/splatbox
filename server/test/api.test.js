@@ -86,3 +86,20 @@ test('basic auth: off by default, enforced when configured, readonly mode', asyn
   assert.equal((await ro.app.inject({ method: 'POST', url: '/api/collections', payload: { name: 'x' } })).statusCode, 401);
   assert.equal((await ro.app.inject({ method: 'POST', url: '/api/collections', payload: { name: 'x' }, headers: good })).statusCode, 201);
 });
+
+test('background requests get 401 without a login prompt', async () => {
+  const { app } = await setup({ BASIC_AUTH_USER: 'u', BASIC_AUTH_PASSWORD: 'p', BASIC_AUTH_READONLY: 'true' });
+  const res = await put(app, '/api/collections/x/assets/a.webp', Buffer.from('img'), { 'x-splatbox-background': '1' });
+  assert.equal(res.statusCode, 401);
+  assert.equal(res.headers['www-authenticate'], undefined);
+});
+
+test('uploaded thumbnail is attached as the preview of the scan with the same base name', async () => {
+  const { app } = await setup();
+  const c = (await app.inject({ method: 'POST', url: '/api/collections', payload: { name: 'Thumbs' } })).json();
+  assert.equal((await put(app, `/api/collections/${c.id}/assets/room.ply`, Buffer.from('ply-data'))).statusCode, 200);
+  assert.equal((await put(app, `/api/collections/${c.id}/assets/room.webp`, Buffer.from('webp-data'))).statusCode, 200);
+  const manifest = (await app.inject(`/files/collections/${c.id}/manifest.json`)).json();
+  assert.equal(manifest.assets.length, 1);
+  assert.equal(manifest.assets[0].preview, 'assets/room.webp');
+});

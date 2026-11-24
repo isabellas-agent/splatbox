@@ -7,24 +7,22 @@
 import { useEffect, useState, useCallback, useRef } from 'preact/hooks';
 import { useStore } from '../store';
 import Viewer from './Viewer';
-import TitleCard from './TitleCard';
+import Gallery from './Gallery';
 import SidePanel from './SidePanel';
 import MobileSheet from './MobileSheet';
 import AssetSidebar from './AssetSidebar';
 import AssetNavigation from './AssetNavigation';
 import { initViewer, startRenderLoop, currentMesh, camera, controls, defaultCamera, defaultControls, dollyZoomBaseDistance, dollyZoomBaseFov, requestRender, THREE } from '../viewer';
-import { resize, loadFromStorageSource, loadNextAsset, loadPrevAsset, handleMultipleFiles } from '../fileLoader';
+import { resize, loadFromStorageSource, loadNextAsset, loadPrevAsset, handleMultipleFiles, loadAssetByIndex } from '../fileLoader';
 import { resetViewWithImmersive } from '../cameraUtils';
 import { enableImmersiveMode, disableImmersiveMode, setImmersiveSensitivityMultiplier, setTouchPanEnabled, syncImmersiveBaseline } from '../immersiveMode';
 import { setupFullscreenHandler, moveElementsToFullscreen } from '../fullscreenHandler';
 import useOutsideClick from '../utils/useOutsideClick';
 import useSwipe from '../utils/useSwipe';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faRotateRight } from '@fortawesome/free-solid-svg-icons';
+import { faRotateRight, faTableCellsLarge } from '@fortawesome/free-solid-svg-icons';
 import { faExpand, faCompress } from '@fortawesome/free-solid-svg-icons';
 import { initVrSupport } from '../vrMode';
-import { getSourcesArray } from '../storage/index.js';
-import { getSource, createPublicUrlSource, registerSource, saveSource } from '../storage/index.js';
 import { getFormatAccept } from '../formats/index';
 import ConnectStorageDialog from './ConnectStorageDialog';
 
@@ -63,13 +61,13 @@ function App() {
   
   // Local state for viewer initialization
   const [viewerReady, setViewerReady] = useState(false);
-  // Landing screen visibility (controls TitleCard fade-in/out)
-  const [landingVisible, setLandingVisible] = useState(() => assets.length === 0);
+  // Gallery (start screen) visibility
+  const [galleryOpen, setGalleryOpen] = useState(true);
+  const activeSourceId = useStore((state) => state.activeSourceId);
   
   // Track mesh state
   const [hasMesh, setHasMesh] = useState(false);
   const hasMeshRef = useRef(false);
-  const defaultLoadAttempted = useRef(false);
 
   // File input + storage dialog state for title card actions
   const fileInputRef = useRef(null);
@@ -248,8 +246,6 @@ function App() {
 
   const handlePickFile = useCallback(() => {
     (async () => {
-      setLandingVisible(false);
-      await new Promise((r) => setTimeout(r, PANEL_TRANSITION_MS));
       fileInputRef.current?.click();
     })();
   }, []);
@@ -257,6 +253,7 @@ function App() {
   const handleFileChange = useCallback(async (event) => {
     const files = event.target.files;
     if (files && files.length > 0) {
+      setGalleryOpen(false);
       await handleMultipleFiles(Array.from(files));
       event.target.value = '';
     }
@@ -278,6 +275,7 @@ function App() {
 
   const handleSourceConnect = useCallback(async (source) => {
     setStorageDialogOpen(false);
+    setGalleryOpen(false);
     try {
       await loadFromStorageSource(source);
     } catch (err) {
@@ -286,39 +284,38 @@ function App() {
   }, [addLog]);
 
   /**
-   * Title card actions: load demo collection
+   * Gallery actions: open a scan from a collection in the viewer.
+   * Reuses the loaded asset list when the collection is already active.
    */
-  const handleLoadDemo = useCallback(async () => {
+  const handleOpenAsset = useCallback(async (source, index) => {
+    setGalleryOpen(false);
     try {
-      // Fade out landing card before starting load
-      setLandingVisible(false);
-      await new Promise((r) => setTimeout(r, PANEL_TRANSITION_MS));
-      let demo = getSource('demo-public-url');
-      if (!demo) {
-        // Demo collection (cloud)
-        const cloudUrls = [
-          'https://pub-db16fc5228e844edb71f8282c2992658.r2.dev/splat_1/_DSF1672.sog',
-          'https://pub-db16fc5228e844edb71f8282c2992658.r2.dev/splat_1/_DSF1891.sog',
-          'https://pub-db16fc5228e844edb71f8282c2992658.r2.dev/splat_1/_DSF3354.sog',
-        ];
-
-        demo = createPublicUrlSource({ id: 'demo-public-url', name: 'Demo URL collection', assetPaths: cloudUrls });
-        registerSource(demo);
-        try { await saveSource(demo.toJSON()); } catch (err) { console.warn('Failed to persist demo source:', err); }
+      if (source.id === activeSourceId && assets.length > 0) {
+        await loadAssetByIndex(index);
+      } else {
+        await loadFromStorageSource(source, { startIndex: index });
       }
-
-      try {
-        await demo.connect?.();
-      } catch (err) {
-        console.warn('Demo connect failed (continuing):', err);
-      }
-
-      await loadFromStorageSource(demo);
     } catch (err) {
-      addLog('Failed to load demo: ' + (err?.message || err));
-      console.warn('Failed to load demo:', err);
+      addLog('Failed to open scan: ' + (err?.message || err));
     }
-  }, [addLog]);
+  }, [activeSourceId, assets.length, addLog]);
+
+  const handleOpenSource = useCallback(async (source) => {
+    setGalleryOpen(false);
+    try {
+      if (!source.isConnected()) {
+        const result = await source.connect(true);
+        if (!result?.success) {
+          setStatus(`Could not open "${source.name}": ${result?.error || 'permission needed'}`);
+          setGalleryOpen(true);
+          return;
+        }
+      }
+      await loadFromStorageSource(source);
+    } catch (err) {
+      addLog('Failed to load from storage: ' + (err?.message || err));
+    }
+  }, [addLog, setStatus]);
 
   /**
    * Detects mobile device and orientation.
@@ -374,45 +371,11 @@ function App() {
     };
   }, []);
 
-  // Auto-load the default collection (if any) once the viewer is ready
-  useEffect(() => {
-    if (!viewerReady || defaultLoadAttempted.current || assets.length > 0) {
-      return;
-    }
 
-    defaultLoadAttempted.current = true;
-
-    const tryLoadDefaultSource = async () => {
-      try {
-        const sources = getSourcesArray();
-        const defaultSource = sources.find((source) => source?.config?.isDefault);
-        if (!defaultSource) return;
-
-        if (!defaultSource.isConnected()) {
-          const result = await defaultSource.connect(false);
-          if (!result?.success) {
-            if (result?.needsPermission) {
-              setStatus(`"${defaultSource.name}" needs permission to load the default collection.`);
-            } else if (result?.error) {
-              setStatus(`Could not load default collection: ${result.error}`);
-            }
-            return;
-          }
-        }
-
-        await loadFromStorageSource(defaultSource);
-      } catch (err) {
-        setStatus(`Failed to load default collection: ${err?.message || err}`);
-      }
-    };
-
-    tryLoadDefaultSource();
-  }, [viewerReady, assets.length, setStatus]);
-
-  // Keep landingVisible in sync: show when no assets, hide when assets present
+  // Nothing loaded (e.g. last scan removed): go back to the gallery
   useEffect(() => {
     if (assets.length === 0) {
-      setLandingVisible(true);
+      setGalleryOpen(true);
     }
   }, [assets.length]);
 
@@ -427,11 +390,14 @@ function App() {
         hidden 
         onChange={handleFileChange}
       />
-      <TitleCard
-        show={landingVisible && assets.length === 0}
-        onPickFile={handlePickFile}
+      <Gallery
+        show={galleryOpen}
+        canReturn={assets.length > 0}
+        onReturn={() => setGalleryOpen(false)}
+        onOpenAsset={handleOpenAsset}
+        onOpenSource={handleOpenSource}
+        onPickFiles={handlePickFile}
         onOpenStorage={handleOpenStorage}
-        onLoadDemo={handleLoadDemo}
       />
         <Viewer viewerReady={viewerReady} />
       {/* Separate swipe target near bottom controls (debug green) */}
@@ -441,6 +407,14 @@ function App() {
       <div class="bottom-controls" ref={bottomControlsRef}>
         {/* Left: Asset index button */}
         <div class="bottom-controls-left">
+          <button
+            class="bottom-page-btn"
+            onClick={() => setGalleryOpen(true)}
+            title="Back to gallery"
+            aria-label="Back to gallery"
+          >
+            <FontAwesomeIcon icon={faTableCellsLarge} />
+          </button>
           {assets.length > 0 && (
             <button
               class="bottom-page-btn"
