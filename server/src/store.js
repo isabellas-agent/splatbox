@@ -39,6 +39,31 @@ export function sanitizeFilename(raw) {
   return name;
 }
 
+
+const MAX_TAGS = 50;
+
+function cleanText(v, max, field) {
+  if (v === null) return '';
+  if (typeof v !== 'string') throw new HttpError(400, `${field} must be a string`);
+  const t = v.trim();
+  if (t.length > max) throw new HttpError(400, `${field} too long (max ${max})`);
+  return t;
+}
+
+function cleanTags(v) {
+  if (!Array.isArray(v)) throw new HttpError(400, 'tags must be an array of strings');
+  const out = [];
+  for (const raw of v) {
+    if (typeof raw !== 'string') throw new HttpError(400, 'tags must be an array of strings');
+    const t = raw.trim().replace(/\s+/g, ' ').toLowerCase();
+    if (!t) continue;
+    if (t.length > 40) throw new HttpError(400, 'tag too long (max 40)');
+    if (!out.includes(t)) out.push(t);
+  }
+  if (out.length > MAX_TAGS) throw new HttpError(400, `too many tags (max ${MAX_TAGS})`);
+  return out;
+}
+
 export class Store {
   constructor(dataDir, maxUploadBytes) {
     this.root = path.join(dataDir, 'collections');
@@ -211,6 +236,100 @@ export class Store {
       await this.writeManifest(id, manifest);
       return { removed };
     });
+  }
+
+  /**
+   * Update per-scan metadata. `title`/`description` replace the values (empty
+   * string clears them); `tags` replaces the tag list; `addTags`/`removeTags`
+   * edit it (bulk tagging).
+   */
+  async updateAssets(id, body = {}) {
+    const { paths } = body;
+    if (!Array.isArray(paths) || !paths.length) throw new HttpError(400, 'paths required');
+    const patch = {};
+    if (body.title !== undefined) patch.title = cleanText(body.title, 200, 'title');
+    if (body.description !== undefined) patch.description = cleanText(body.description, 5000, 'description');
+    const tags = body.tags !== undefined ? cleanTags(body.tags) : null;
+    const addTags = body.addTags !== undefined ? cleanTags(body.addTags) : [];
+    const removeTags = new Set(body.removeTags !== undefined ? cleanTags(body.removeTags) : []);
+    return this.withLock(id, async () => {
+      const manifest = await this.readManifest(id);
+      const updated = [];
+      for (const p of paths) {
+        const entry = manifest.assets.find((a) => a.path === p);
+        if (!entry) continue;
+        for (const [k, v] of Object.entries(patch)) {
+          if (v) entry[k] = v;
+          else delete entry[k];
+        }
+        let next = tags ?? entry.tags ?? [];
+        next = [...next, ...addTags].filter((t) => !removeTags.has(t));
+        next = [...new Set(next)].slice(0, MAX_TAGS);
+        if (next.length) entry.tags = next;
+        else delete entry.tags;
+        updated.push(entry);
+      }
+      if (!updated.length) throw new HttpError(404, 'No matching assets');
+      await this.writeManifest(id, manifest);
+      return { updated };
+    });
+  }
+
+  /** Move or copy scans (with their preview/metadata files) to another collection. */
+  async transferAssets(id, body = {}) {
+    const { paths, target } = body;
+    const mode = body.mode || 'move';
+    if (!Array.isArray(paths) || !paths.length) throw new HttpError(400, 'paths required');
+    if (!['move', 'copy'].includes(mode)) throw new HttpError(400, 'mode must be move or copy');
+    if (typeof target !== 'string' || target === id) throw new HttpError(400, 'target must be another collection');
+    this.dir(target); // validates id
+    // Lock both collections in a stable order to avoid deadlocks.
+    const [first, second] = [id, target].sort();
+    return this.withLock(first, () => this.withLock(second, async () => {
+      const src = await this.readManifest(id);
+      const dst = await this.readManifest(target);
+      const srcAssets = path.join(this.dir(id), 'assets');
+      const dstAssets = path.join(this.dir(target), 'assets');
+      const taken = new Set((await fs.readdir(dstAssets)).map((f) => f.toLowerCase()));
+      const transferred = [];
+      for (const p of paths) {
+        const entry = src.assets.find((a) => a.path === p);
+        if (!entry) continue;
+        const fileName = path.basename(entry.path);
+        const extension = path.extname(fileName);
+        const stem = fileName.slice(0, -extension.length);
+        // Pick a base name that is free for the scan and its companion files
+        let newStem = stem;
+        const companions = [entry.preview, typeof entry.metadata === 'string' ? entry.metadata : null]
+          .filter(Boolean)
+          .map((rel) => path.basename(rel));
+        const renameCompanion = (f, s) => s + f.slice(baseName(f).length);
+        for (let n = 2; ; n++) {
+          const names = [newStem + extension, ...companions.map((f) => renameCompanion(f, newStem))];
+          if (names.every((f) => !taken.has(f.toLowerCase()))) break;
+          newStem = `${stem}-${n}`;
+        }
+        const moves = [[fileName, newStem + extension], ...companions.map((f) => [f, renameCompanion(f, newStem)])];
+        for (const [from, to] of moves) {
+          const a = path.join(srcAssets, from);
+          const b = path.join(dstAssets, to);
+          if (mode === 'copy') await fs.copyFile(a, b, fs.constants.COPYFILE_EXCL);
+          else await fs.rename(a, b);
+          taken.add(to.toLowerCase());
+        }
+        const copy = { ...entry, path: `assets/${newStem}${extension}`, name: `${newStem}${extension}` };
+        delete copy.preview;
+        delete copy.metadata;
+        dst.assets.push(copy);
+        if (mode === 'move') src.assets = src.assets.filter((a) => a !== entry);
+        transferred.push({ from: p, to: copy.path });
+      }
+      if (!transferred.length) throw new HttpError(404, 'No matching assets');
+      await this._reconcile(target, dst);
+      await this.writeManifest(target, dst);
+      if (mode === 'move') await this.writeManifest(id, src);
+      return { mode, target, transferred };
+    }));
   }
 
   async rescan(id, apply) {

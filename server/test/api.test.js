@@ -126,3 +126,73 @@ test('web app: hashed assets are immutable, index.html is revalidated', async ()
   assert.equal(asset.statusCode, 200);
   assert.equal(asset.headers['cache-control'], 'public, max-age=31536000, immutable');
 });
+
+test('per-scan title, description and tags (single and bulk)', async () => {
+  const { app } = await setup();
+  const c = (await app.inject({ method: 'POST', url: '/api/collections', payload: { name: 'Meta' } })).json();
+  await put(app, `/api/collections/${c.id}/assets/a.ply`, Buffer.from('a'));
+  await put(app, `/api/collections/${c.id}/assets/b.ply`, Buffer.from('b'));
+  const patch = (payload) => app.inject({ method: 'PATCH', url: `/api/collections/${c.id}/assets`, payload });
+
+  let r = await patch({ paths: ['assets/a.ply'], title: ' Kitchen ', description: 'Morning light', tags: ['Indoor', 'indoor ', 'Home'] });
+  assert.equal(r.statusCode, 200);
+  let m = (await app.inject(`/files/collections/${c.id}/manifest.json`)).json();
+  assert.deepEqual(m.assets[0], { path: 'assets/a.ply', name: 'a.ply', size: 1, title: 'Kitchen', description: 'Morning light', tags: ['indoor', 'home'] });
+
+  r = await patch({ paths: ['assets/a.ply', 'assets/b.ply'], addTags: ['2026'], removeTags: ['home'] });
+  assert.equal(r.statusCode, 200);
+  m = (await app.inject(`/files/collections/${c.id}/manifest.json`)).json();
+  assert.deepEqual(m.assets[0].tags, ['indoor', '2026']);
+  assert.deepEqual(m.assets[1].tags, ['2026']);
+
+  r = await patch({ paths: ['assets/a.ply'], title: '', tags: [] });
+  m = (await app.inject(`/files/collections/${c.id}/manifest.json`)).json();
+  assert.equal(m.assets[0].title, undefined);
+  assert.equal(m.assets[0].tags, undefined);
+  assert.equal(m.assets[0].description, 'Morning light');
+
+  assert.equal((await patch({ paths: ['assets/a.ply'], title: 'x'.repeat(201) })).statusCode, 400);
+  assert.equal((await patch({ paths: ['assets/a.ply'], tags: 'nope' })).statusCode, 400);
+  assert.equal((await patch({ paths: ['assets/missing.ply'], title: 'x' })).statusCode, 404);
+});
+
+test('move and copy scans between collections with previews and name clashes', async () => {
+  const { app, dataDir } = await setup();
+  const mk = async (name) => (await app.inject({ method: 'POST', url: '/api/collections', payload: { name } })).json();
+  const a = await mk('Source');
+  const b = await mk('Target');
+  await put(app, `/api/collections/${a.id}/assets/room.ply`, Buffer.from('room-a'));
+  await put(app, `/api/collections/${a.id}/assets/room.webp`, Buffer.from('thumb-a'));
+  await put(app, `/api/collections/${a.id}/assets/hall.ply`, Buffer.from('hall'));
+  await app.inject({ method: 'PATCH', url: `/api/collections/${a.id}/assets`, payload: { paths: ['assets/room.ply'], title: 'Room', tags: ['x'] } });
+  await put(app, `/api/collections/${b.id}/assets/room.ply`, Buffer.from('room-b'));
+  const transfer = (id, payload) => app.inject({ method: 'POST', url: `/api/collections/${id}/assets/transfer`, payload });
+
+  // copy: source keeps the scan, target gets a renamed copy with its thumbnail
+  let r = await transfer(a.id, { paths: ['assets/room.ply'], target: b.id, mode: 'copy' });
+  assert.equal(r.statusCode, 200);
+  assert.deepEqual(r.json().transferred, [{ from: 'assets/room.ply', to: 'assets/room-2.ply' }]);
+  let ma = (await app.inject(`/files/collections/${a.id}/manifest.json`)).json();
+  let mb = (await app.inject(`/files/collections/${b.id}/manifest.json`)).json();
+  assert.equal(ma.assets.length, 2);
+  const copied = mb.assets.find((x) => x.path === 'assets/room-2.ply');
+  assert.equal(copied.title, 'Room');
+  assert.deepEqual(copied.tags, ['x']);
+  assert.equal(copied.preview, 'assets/room-2.webp');
+  assert.equal(await fs.readFile(path.join(dataDir, 'collections', b.id, 'assets', 'room-2.webp'), 'utf8'), 'thumb-a');
+  assert.equal(await fs.readFile(path.join(dataDir, 'collections', b.id, 'assets', 'room.ply'), 'utf8'), 'room-b');
+
+  // move: removed from source with its files
+  r = await transfer(a.id, { paths: ['assets/room.ply', 'assets/hall.ply'], target: b.id, mode: 'move' });
+  assert.equal(r.statusCode, 200);
+  ma = (await app.inject(`/files/collections/${a.id}/manifest.json`)).json();
+  mb = (await app.inject(`/files/collections/${b.id}/manifest.json`)).json();
+  assert.equal(ma.assets.length, 0);
+  assert.deepEqual(mb.assets.map((x) => x.path).sort(), ['assets/hall.ply', 'assets/room-2.ply', 'assets/room-3.ply', 'assets/room.ply']);
+  assert.deepEqual(await fs.readdir(path.join(dataDir, 'collections', a.id, 'assets')), []);
+
+  assert.equal((await transfer(a.id, { paths: ['assets/x.ply'], target: a.id })).statusCode, 400);
+  assert.equal((await transfer(a.id, { paths: ['assets/x.ply'], target: '../etc' })).statusCode, 400);
+  assert.equal((await transfer(b.id, { paths: ['assets/hall.ply'], target: 'nope' })).statusCode, 404);
+  assert.equal((await transfer(b.id, { paths: ['assets/hall.ply'], target: a.id, mode: 'link' })).statusCode, 400);
+});

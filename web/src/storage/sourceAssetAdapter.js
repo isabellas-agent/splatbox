@@ -19,6 +19,9 @@ export const adaptRemoteAsset = (remoteAsset) => {
   return {
     id: remoteAsset.id,
     name: remoteAsset.name,
+    title: remoteAsset.title || null,
+    description: remoteAsset.description || null,
+    tags: remoteAsset.tags || [],
     path: remoteAsset.path,
     sourceId: remoteAsset.sourceId,
     sourceType: remoteAsset.sourceType,

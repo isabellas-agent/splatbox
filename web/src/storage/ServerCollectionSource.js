@@ -94,6 +94,9 @@ export class ServerCollectionSource extends AssetSource {
         sourceId: this.id,
         sourceType: this.type,
         size: item.size,
+        title: item.title || null,
+        description: item.description || null,
+        tags: Array.isArray(item.tags) ? item.tags : [],
         preview: item.preview ? this._fileUrl(item.preview) : null,
         previewSource: item.preview ? 'remote' : null,
         _metadataPath: typeof item.metadata === 'string' ? item.metadata : null,
@@ -185,6 +188,32 @@ export class ServerCollectionSource extends AssetSource {
       return false;
     }
     return true;
+  }
+
+  /** Update title/description/tags of one or more scans (see server PATCH /assets). */
+  async updateAssetsMeta(paths, patch) {
+    const res = await fetch(this._api('/assets'), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths, ...patch }),
+    });
+    if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
+    const out = await res.json();
+    await this.listAssets();
+    return out;
+  }
+
+  /** Move or copy scans to another server collection. */
+  async transferAssets(paths, targetCollectionId, mode = 'move') {
+    const res = await fetch(this._api('/assets/transfer'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths, target: targetCollectionId, mode }),
+    });
+    if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
+    const out = await res.json();
+    await this.listAssets();
+    return out;
   }
 
   async deleteAssets(items) {

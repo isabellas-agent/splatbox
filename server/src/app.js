@@ -58,6 +58,8 @@ export async function buildApp(config, { logger = false } = {}) {
     return store.putAsset(req.params.id, req.params.filename, req.body);
   });
   app.delete('/api/collections/:id/assets', async (req) => store.deleteAssets(req.params.id, req.body?.paths));
+  app.patch('/api/collections/:id/assets', async (req) => store.updateAssets(req.params.id, req.body || {}));
+  app.post('/api/collections/:id/assets/transfer', async (req) => store.transferAssets(req.params.id, req.body || {}));
   app.post('/api/collections/:id/rescan', async (req) => store.rescan(req.params.id, req.query.apply === '1'));
 
   // Collection files (manifest + assets) with Range/ETag support
