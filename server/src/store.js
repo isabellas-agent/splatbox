@@ -8,6 +8,8 @@ import { randomBytes } from 'node:crypto';
 export const SPLAT_EXTS = ['.ply', '.sog', '.spz', '.splat', '.ksplat'];
 export const PREVIEW_EXTS = ['.jpg', '.jpeg', '.png', '.webp'];
 const META_SUFFIXES = ['.meta.json', '.metadata.json'];
+/** Gallery orbit/parallax sprite sheet: `<scan base name>.anim.webp` */
+const ANIM_SUFFIX = '.anim.webp';
 const ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const MANIFEST_VERSION = 1;
 
@@ -26,6 +28,14 @@ const baseName = (name) => {
   return (e ? name.slice(0, -e.length) : name).toLowerCase();
 };
 const isMeta = (name) => META_SUFFIXES.some((s) => name.toLowerCase().endsWith(s));
+const isAnim = (name) => name.toLowerCase().endsWith(ANIM_SUFFIX);
+
+/**
+ * Base name shared by a scan and its companion files.
+ * `room.ply`, `room.webp`, `room.meta.json` and `room.anim.webp` all yield `room`.
+ */
+const assetBaseName = (name) =>
+  isAnim(name) ? name.slice(0, name.length - ANIM_SUFFIX.length).toLowerCase() : baseName(name);
 
 export const slugify = (s) =>
   s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
@@ -62,6 +72,54 @@ function cleanTags(v) {
   }
   if (out.length > MAX_TAGS) throw new HttpError(400, `too many tags (max ${MAX_TAGS})`);
   return out;
+}
+
+const GALLERY_MOTIONS = ['none', 'orbit', 'parallax'];
+
+function cleanNumber(v, field, { min = -Infinity, max = Infinity } = {}) {
+  if (typeof v !== 'number' || !Number.isFinite(v)) throw new HttpError(400, `${field} must be a number`);
+  if (v < min || v > max) throw new HttpError(400, `${field} out of range (${min}..${max})`);
+  return Math.round(v * 1e4) / 1e4;
+}
+
+function cleanVec3(v, field) {
+  if (!Array.isArray(v) || v.length !== 3) throw new HttpError(400, `${field} must be an array of 3 numbers`);
+  return v.map((n, i) => cleanNumber(n, `${field}[${i}]`, { min: -1e7, max: 1e7 }));
+}
+
+/**
+ * Default camera pose for a scan: where the viewer opens it and where its
+ * gallery animation is rendered from.
+ */
+function cleanView(v) {
+  if (v === null) return null;
+  if (!v || typeof v !== 'object' || Array.isArray(v)) throw new HttpError(400, 'view must be an object or null');
+  return {
+    position: cleanVec3(v.position, 'view.position'),
+    target: cleanVec3(v.target, 'view.target'),
+    fov: v.fov === undefined ? 60 : cleanNumber(v.fov, 'view.fov', { min: 5, max: 170 }),
+    savedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Gallery card animation for a scan. `motion` decides what the sprite sheet
+ * does: none (static thumbnail), orbit (360° around the saved target) or
+ * parallax (side-step around the saved pose).
+ */
+function cleanGallery(g) {
+  if (g === null) return null;
+  if (!g || typeof g !== 'object' || Array.isArray(g)) throw new HttpError(400, 'gallery must be an object or null');
+  const motion = g.motion === undefined ? 'none' : g.motion;
+  if (!GALLERY_MOTIONS.includes(motion)) {
+    throw new HttpError(400, `gallery.motion must be one of: ${GALLERY_MOTIONS.join(', ')}`);
+  }
+  return {
+    motion,
+    frames: Math.round(g.frames === undefined ? 24 : cleanNumber(g.frames, 'gallery.frames', { min: 2, max: 48 })),
+    duration: Math.round(g.duration === undefined ? 6000 : cleanNumber(g.duration, 'gallery.duration', { min: 500, max: 60000 })),
+    amount: g.amount === undefined ? 0.12 : cleanNumber(g.amount, 'gallery.amount', { min: 0.01, max: 1 }),
+  };
 }
 
 export class Store {
@@ -157,15 +215,20 @@ export class Store {
     await this.withLock(id, () => fs.rm(this.dir(id), { recursive: true, force: true }));
   }
 
-  /** Attach previews/metadata files to the asset with the same base name. */
+  /** Attach previews/metadata/animation files to the asset with the same base name. */
   _attach(manifest) {
     const files = manifest._files || [];
     for (const a of manifest.assets) {
-      const b = baseName(path.basename(a.path));
-      const prev = files.find((f) => PREVIEW_EXTS.includes(ext(f)) && baseName(f) === b);
-      const meta = files.find((f) => isMeta(f) && baseName(f) === b);
+      const b = assetBaseName(path.basename(a.path));
+      const prev = files.find((f) => !isAnim(f) && PREVIEW_EXTS.includes(ext(f)) && assetBaseName(f) === b);
+      const meta = files.find((f) => isMeta(f) && assetBaseName(f) === b);
+      const anim = files.find((f) => isAnim(f) && assetBaseName(f) === b);
       if (prev) a.preview = `assets/${prev}`;
+      else delete a.preview;
       if (meta) a.metadata = `assets/${meta}`;
+      else delete a.metadata;
+      if (anim) a.animation = `assets/${anim}`;
+      else delete a.animation;
     }
   }
 
@@ -224,7 +287,12 @@ export class Store {
       for (const p of paths) {
         const entry = manifest.assets.find((a) => a.path === p);
         if (!entry) continue;
-        for (const rel of [entry.path, entry.preview, typeof entry.metadata === 'string' ? entry.metadata : null]) {
+        for (const rel of [
+          entry.path,
+          entry.preview,
+          typeof entry.metadata === 'string' ? entry.metadata : null,
+          typeof entry.animation === 'string' ? entry.animation : null,
+        ]) {
           if (!rel) continue;
           const abs = path.join(this.dir(id), rel);
           if (!abs.startsWith(path.join(this.dir(id), 'assets') + path.sep)) continue;
@@ -249,6 +317,8 @@ export class Store {
     const patch = {};
     if (body.title !== undefined) patch.title = cleanText(body.title, 200, 'title');
     if (body.description !== undefined) patch.description = cleanText(body.description, 5000, 'description');
+    if (body.view !== undefined) patch.view = cleanView(body.view);
+    if (body.gallery !== undefined) patch.gallery = cleanGallery(body.gallery);
     const tags = body.tags !== undefined ? cleanTags(body.tags) : null;
     const addTags = body.addTags !== undefined ? cleanTags(body.addTags) : [];
     const removeTags = new Set(body.removeTags !== undefined ? cleanTags(body.removeTags) : []);
@@ -300,10 +370,14 @@ export class Store {
         const stem = fileName.slice(0, -extension.length);
         // Pick a base name that is free for the scan and its companion files
         let newStem = stem;
-        const companions = [entry.preview, typeof entry.metadata === 'string' ? entry.metadata : null]
+        const companions = [
+          entry.preview,
+          typeof entry.metadata === 'string' ? entry.metadata : null,
+          typeof entry.animation === 'string' ? entry.animation : null,
+        ]
           .filter(Boolean)
           .map((rel) => path.basename(rel));
-        const renameCompanion = (f, s) => s + f.slice(baseName(f).length);
+        const renameCompanion = (f, s) => s + f.slice(assetBaseName(f).length);
         for (let n = 2; ; n++) {
           const names = [newStem + extension, ...companions.map((f) => renameCompanion(f, newStem))];
           if (names.every((f) => !taken.has(f.toLowerCase()))) break;
@@ -320,6 +394,7 @@ export class Store {
         const copy = { ...entry, path: `assets/${newStem}${extension}`, name: `${newStem}${extension}` };
         delete copy.preview;
         delete copy.metadata;
+        delete copy.animation;
         dst.assets.push(copy);
         if (mode === 'move') src.assets = src.assets.filter((a) => a !== entry);
         transferred.push({ from: p, to: copy.path });

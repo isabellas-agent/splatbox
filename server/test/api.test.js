@@ -196,3 +196,54 @@ test('move and copy scans between collections with previews and name clashes', a
   assert.equal((await transfer(b.id, { paths: ['assets/hall.ply'], target: 'nope' })).statusCode, 404);
   assert.equal((await transfer(b.id, { paths: ['assets/hall.ply'], target: a.id, mode: 'link' })).statusCode, 400);
 });
+
+test('saved default view and gallery animation per scan', async () => {
+  const { app, dataDir } = await setup();
+  const c = (await app.inject({ method: 'POST', url: '/api/collections', payload: { name: 'Views' } })).json();
+  const patch = (payload) => app.inject({ method: 'PATCH', url: `/api/collections/${c.id}/assets`, payload });
+  await put(app, `/api/collections/${c.id}/assets/room.ply`, Buffer.from('ply'));
+
+  const view = { position: [1.5, 0.5, -2], target: [0, 0.25, 0], fov: 72 };
+  let r = await patch({ paths: ['assets/room.ply'], view, gallery: { motion: 'orbit', frames: 24, duration: 8000 } });
+  assert.equal(r.statusCode, 200);
+  let m = (await app.inject(`/files/collections/${c.id}/manifest.json`)).json();
+  assert.deepEqual(m.assets[0].view.position, [1.5, 0.5, -2]);
+  assert.equal(m.assets[0].view.fov, 72);
+  assert.match(m.assets[0].view.savedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.deepEqual(
+    { motion: m.assets[0].gallery.motion, frames: m.assets[0].gallery.frames, duration: m.assets[0].gallery.duration },
+    { motion: 'orbit', frames: 24, duration: 8000 },
+  );
+  assert.equal(m.assets[0].animation, undefined);
+
+  // The sprite sheet companions the scan like a thumbnail does
+  assert.equal((await put(app, `/api/collections/${c.id}/assets/room.anim.webp`, Buffer.from('sheet'))).statusCode, 200);
+  m = (await app.inject(`/files/collections/${c.id}/manifest.json`)).json();
+  assert.equal(m.assets[0].animation, 'assets/room.anim.webp');
+  assert.equal(m.assets[0].preview, undefined);
+  assert.equal((await app.inject(`/files/collections/${c.id}/assets/room.anim.webp`)).body, 'sheet');
+
+  // Validation
+  assert.equal((await patch({ paths: ['assets/room.ply'], view: { position: [1, 2], target: [0, 0, 0] } })).statusCode, 400);
+  assert.equal((await patch({ paths: ['assets/room.ply'], view: { position: [1, 2, 3], target: [0, 0, 0], fov: 'wide' } })).statusCode, 400);
+  assert.equal((await patch({ paths: ['assets/room.ply'], gallery: { motion: 'spin' } })).statusCode, 400);
+  assert.equal((await patch({ paths: ['assets/room.ply'], gallery: { motion: 'orbit', frames: 1 } })).statusCode, 400);
+
+  // Clearing the view but keeping the animation setting
+  r = await patch({ paths: ['assets/room.ply'], view: null });
+  m = (await app.inject(`/files/collections/${c.id}/manifest.json`)).json();
+  assert.equal(m.assets[0].view, undefined);
+  assert.equal(m.assets[0].gallery.motion, 'orbit');
+
+  // Move keeps the sprite sheet, renamed with the scan
+  const t = (await app.inject({ method: 'POST', url: '/api/collections', payload: { name: 'Target' } })).json();
+  r = await app.inject({ method: 'POST', url: `/api/collections/${c.id}/assets/transfer`, payload: { paths: ['assets/room.ply'], target: t.id, mode: 'move' } });
+  assert.equal(r.statusCode, 200);
+  const mt = (await app.inject(`/files/collections/${t.id}/manifest.json`)).json();
+  assert.equal(mt.assets[0].animation, 'assets/room.anim.webp');
+  assert.equal(await fs.readFile(path.join(dataDir, 'collections', t.id, 'assets', 'room.anim.webp'), 'utf8'), 'sheet');
+
+  // Deleting the scan removes its sprite sheet too
+  await app.inject({ method: 'DELETE', url: `/api/collections/${t.id}/assets`, payload: { paths: ['assets/room.ply'] } });
+  assert.deepEqual(await fs.readdir(path.join(dataDir, 'collections', t.id, 'assets')), []);
+});

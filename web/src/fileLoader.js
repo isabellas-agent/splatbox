@@ -25,6 +25,7 @@ import { uploadPreviewToServer } from "./storage/serverPreview.js";
 import {
   fitViewToMesh,
   applyMetadataCamera,
+  applySavedView,
   clearMetadataCamera,
   saveHomeView,
   applyFocusDistanceOverride,
@@ -433,6 +434,11 @@ export const loadSplatFile = async (assetOrFile, options = {}) => {
         store.addLog(`Applied focus distance override: ${focusDistanceOverride.toFixed(2)} units`);
       }
 
+      // A saved default view wins over the automatic camera
+      if (applySavedView(asset.view)) {
+        store.addLog(`Opened ${asset.name} at its saved view`);
+      }
+
       try {
         store.setFov(camera.fov);
       } catch (err) {
@@ -470,6 +476,11 @@ export const loadSplatFile = async (assetOrFile, options = {}) => {
         if (focusDistanceOverride !== undefined) {
           applyFocusDistanceOverride(focusDistanceOverride);
           store.addLog(`Applied focus distance override: ${focusDistanceOverride.toFixed(2)} units`);
+        }
+
+        // A saved default view wins over the automatic camera
+        if (applySavedView(asset.view)) {
+          store.addLog(`Opened ${asset.name} at its saved view`);
         }
 
         try {

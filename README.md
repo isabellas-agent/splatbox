@@ -14,6 +14,12 @@ with a WebXR viewer that runs in the Quest 3 browser. One container, one `/data`
   scans (and collections) without leaving VR.
 - **Thumbnails** are rendered in the browser the first time a scan is opened and stored on the server
   (`<name>.webp` next to the scan), so every device sees them.
+- **Saved default view + animated gallery preview, per scan**: the camera button in the viewer stores the
+  current position/orientation/FOV as the view the scan opens with (it is also what *reset view* returns to)
+  and renders the thumbnail from that pose. The same dialog picks how the scan animates in the gallery:
+  **Orbit 360°** around the saved target, **Parallax** (a small side-step), or **None**. The viewer renders
+  the frames into one sprite sheet, uploads it next to the scan (`<scan>.anim.webp`) and the gallery card
+  plays it with a CSS `steps()` animation — one image per card, works on every device, no extra service.
 - Per-collection `manifest.json` (manifest v1) at `/files/collections/<id>/manifest.json`.
 
 ![splatbox gallery](docs/screenshot.png)
@@ -27,6 +33,10 @@ with a WebXR viewer that runs in the Quest 3 browser. One container, one `/data`
 ![splatbox viewer](docs/viewer.png)
 
 *Viewer: scan 2 of 3 in the collection, with previous/next and the gallery button.*
+
+![default view and gallery preview](docs/scan-view.png)
+
+*Set the default view and the gallery animation per scan (camera button in the viewer).*
 
 ![in-VR panel](docs/vr-panel.png)
 
@@ -78,10 +88,30 @@ cd server && DATA_DIR=../data WEB_DIR=../web/dist npm start
 `GET/POST /api/collections`, `PATCH/DELETE /api/collections/:id`,
 `PUT /api/collections/:id/assets/:filename` (raw body, `application/octet-stream`),
 `DELETE /api/collections/:id/assets` (`{"paths": [...]}`),
-`PATCH /api/collections/:id/assets` (`{"paths": [...], "title", "description", "tags": [...], "addTags": [...], "removeTags": [...]}`),
+`PATCH /api/collections/:id/assets` (`{"paths": [...], "title", "description", "tags": [...], "addTags": [...], "removeTags": [...], "view", "gallery"}`),
 `POST /api/collections/:id/assets/transfer` (`{"paths": [...], "target": "<collection id>", "mode": "move"|"copy"}`),
 `POST /api/collections/:id/rescan?apply=1`,
 `GET /api/health`.
+
+### Per-scan presentation
+
+`view` is the pose a scan opens with and the pose its gallery preview is rendered from:
+
+```json
+"view": { "position": [0.6, 0.52, 8.59], "target": [-0.0005, -0.0176, -0.0015], "fov": 60, "savedAt": "..." }
+```
+
+`gallery` is how its card animates:
+
+```json
+"gallery": { "motion": "orbit", "frames": 24, "duration": 8000, "amount": 0.12 }
+```
+
+`motion` is `none`, `orbit` (one full turn around `view.target`) or `parallax` (a side-step of
+`amount` × the view distance). The viewer renders `frames` tiles of 320×240 into a single
+`<scan>.anim.webp` sprite sheet next to the scan; the server attaches it as `animation` the same way
+`<scan>.webp` becomes `preview`. Send `view: null` / `gallery: null` to clear them, or rebuild them
+from the viewer's camera button.
 
 ## License
 

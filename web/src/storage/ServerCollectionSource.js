@@ -99,6 +99,10 @@ export class ServerCollectionSource extends AssetSource {
         tags: Array.isArray(item.tags) ? item.tags : [],
         preview: item.preview ? this._fileUrl(item.preview) : null,
         previewSource: item.preview ? 'remote' : null,
+        // Default camera pose and gallery animation, set from the viewer
+        view: item.view && typeof item.view === 'object' ? item.view : null,
+        gallery: item.gallery && typeof item.gallery === 'object' ? item.gallery : null,
+        animation: item.animation ? this._fileUrl(item.animation) : null,
         _metadataPath: typeof item.metadata === 'string' ? item.metadata : null,
         _inlineMetadata: item.metadata && typeof item.metadata === 'object' ? item.metadata : null,
         loaded: false,
@@ -187,6 +191,25 @@ export class ServerCollectionSource extends AssetSource {
       console.warn(`[ServerCollection] Preview upload failed: ${res.status}`);
       return false;
     }
+    return true;
+  }
+
+  /**
+   * Upload the gallery animation sprite sheet (`<name>.anim.webp`). The server
+   * attaches it to the scan with the same base name, like a thumbnail.
+   */
+  async uploadAnimation(assetPath, blob) {
+    const base = getFilename(assetPath).replace(/\.[^.]+$/, '');
+    const res = await fetch(this._api(`/assets/${encodeURIComponent(`${base}.anim.webp`)}`), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: blob,
+    });
+    if (!res.ok) {
+      console.warn(`[ServerCollection] Animation upload failed: ${res.status}`);
+      return false;
+    }
+    await this.listAssets();
     return true;
   }
 

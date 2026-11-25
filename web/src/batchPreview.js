@@ -14,6 +14,7 @@ import {
 } from './assetManager.js';
 import {
   applyMetadataCamera,
+  applySavedView,
   fitViewToMesh,
   applyFocusDistanceOverride,
   saveHomeView,
@@ -82,6 +83,8 @@ const loadSplatFileFast = async (asset) => {
     if (focusDistanceOverride !== undefined) {
       applyFocusDistanceOverride(focusDistanceOverride);
     }
+
+    applySavedView(asset.view);
 
     saveHomeView();
 

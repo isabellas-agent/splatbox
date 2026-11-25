@@ -143,6 +143,51 @@ export const applyFocusDistanceOverride = (distance) => {
 };
 
 // Camera pose helpers -------------------------------------------------------
+/** Round a number for compact manifest storage */
+const roundPose = (n) => Math.round(n * 1e4) / 1e4;
+
+/**
+ * Capture the current orbit pose as plain JSON so it can be stored in a scan
+ * manifest (`view`): where the camera sits, what it looks at, and its FOV.
+ * @returns {{position: number[], target: number[], fov: number}|null}
+ */
+export const captureSavedView = () => {
+  if (!camera || !controls) return null;
+  return {
+    position: [roundPose(camera.position.x), roundPose(camera.position.y), roundPose(camera.position.z)],
+    target: [roundPose(controls.target.x), roundPose(controls.target.y), roundPose(controls.target.z)],
+    fov: roundPose(camera.fov),
+  };
+};
+
+/**
+ * Apply a `view` stored on a scan (position / target / fov, world space), so a
+ * scan opens at the spot the user saved. Returns false when the pose is absent
+ * or malformed.
+ * @param {{position: number[], target: number[], fov?: number}} view
+ * @returns {boolean}
+ */
+export const applySavedView = (view) => {
+  if (!camera || !controls || !view) return false;
+  const { position, target } = view;
+  if (!Array.isArray(position) || position.length !== 3 || !Array.isArray(target) || target.length !== 3) return false;
+  if (![...position, ...target].every((n) => Number.isFinite(n))) return false;
+
+  const lookAt = new THREE.Vector3(target[0], target[1], target[2]);
+  camera.position.set(position[0], position[1], position[2]);
+  camera.up.set(0, 1, 0);
+  controls.target.copy(lookAt);
+  camera.lookAt(lookAt);
+  if (Number.isFinite(view.fov)) {
+    camera.fov = view.fov;
+    camera.updateProjectionMatrix();
+  }
+  controls.update();
+  updateDollyZoomBaselineFromCamera();
+  requestRender();
+  return true;
+};
+
 export const captureCameraPose = () => ({
   position: camera.position.clone(),
   quaternion: camera.quaternion.clone(),

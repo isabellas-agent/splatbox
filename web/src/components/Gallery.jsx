@@ -55,6 +55,37 @@ const parseTags = (text) =>
 
 export const displayTitle = (asset) => asset?.title || stripExt(asset?.name || '');
 
+/** Respect the OS "reduce motion" setting: animated cards fall back to the still thumbnail. */
+const prefersReducedMotion = () => {
+  try {
+    return !!window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * True while the element is near the viewport. Animated sprite sheets are only
+ * mounted for cards in view, so a long gallery does not decode every sheet.
+ */
+const useInView = (ref) => {
+  const [inView, setInView] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === 'undefined') {
+      setInView(true);
+      return undefined;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => setInView(entries.some((entry) => entry.isIntersecting)),
+      { rootMargin: '200px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref]);
+  return inView;
+};
+
 const isServerSource = (s) => s?.type === 'server-collection';
 const selKey = (sourceId, path) => `${sourceId}|${path}`;
 
@@ -133,6 +164,12 @@ function EditScanDialog({ source, asset, onClose, onSaved }) {
         <span>Tags <small>(comma separated)</small></span>
         <input type="text" value={tags} placeholder="indoor, 2026, family" onInput={(e) => setTags(e.currentTarget.value)} />
       </label>
+      <p class="gallery-hint">
+        {asset.view ? 'This scan opens at its saved view. ' : ''}
+        {asset.gallery?.motion && asset.gallery.motion !== 'none'
+          ? `Gallery preview: ${asset.gallery.motion} (${asset.gallery.frames} frames). Change it in the viewer with the camera button.`
+          : 'No gallery animation. Set the default view and animation in the viewer with the camera button.'}
+      </p>
       {error && <div class="gallery-error">{error}</div>}
     </Dialog>
   );
@@ -231,7 +268,15 @@ function TagDialog({ count, onClose, onConfirm }) {
 
 function AssetCard({ asset, selected, selecting, onOpen, onToggleSelect, onEdit }) {
   const [imgFailed, setImgFailed] = useState(false);
+  const thumbRef = useRef(null);
+  const inView = useInView(thumbRef);
   const showImage = asset.preview && !imgFailed;
+
+  // Per-scan gallery animation: a sprite sheet rendered from the saved view
+  const motion = asset.gallery?.motion;
+  const frames = Math.round(asset.gallery?.frames || 0);
+  const loopMs = Math.round(asset.gallery?.duration || 8000);
+  const animated = !!asset.animation && !!motion && motion !== 'none' && frames >= 2 && inView && !prefersReducedMotion();
   const handleClick = (e) => {
     if (selecting || e.ctrlKey || e.metaKey || e.shiftKey) onToggleSelect();
     else onOpen();
@@ -239,11 +284,24 @@ function AssetCard({ asset, selected, selecting, onOpen, onToggleSelect, onEdit 
   return (
     <div class={`gallery-card ${selected ? 'is-selected' : ''}`}>
       <button class="gallery-card__main" onClick={handleClick} title={selecting ? 'Select' : `Open ${asset.name}`}>
-        <div class="gallery-card__thumb">
+        <div class="gallery-card__thumb" ref={thumbRef}>
           {showImage ? (
             <img src={asset.preview} alt="" loading="lazy" onError={() => setImgFailed(true)} />
           ) : (
             <FontAwesomeIcon icon={faCube} className="gallery-card__placeholder" />
+          )}
+          {animated && (
+            <div class="gallery-card__anim" aria-hidden="true">
+              <div
+                class="gallery-card__anim-strip"
+                style={{
+                  width: `${frames * 100}%`,
+                  backgroundImage: `url("${asset.animation}")`,
+                  animationDuration: `${loopMs}ms`,
+                  animationTimingFunction: `steps(${frames})`,
+                }}
+              />
+            </div>
           )}
           <span class="gallery-card__badge">{extOf(asset.name)}</span>
         </div>

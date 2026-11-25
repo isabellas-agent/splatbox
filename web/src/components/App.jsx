@@ -12,6 +12,7 @@ import SidePanel from './SidePanel';
 import MobileSheet from './MobileSheet';
 import AssetSidebar from './AssetSidebar';
 import AssetNavigation from './AssetNavigation';
+import ScanViewDialog from './ScanViewDialog';
 import { initViewer, startRenderLoop, currentMesh, camera, controls, defaultCamera, defaultControls, dollyZoomBaseDistance, dollyZoomBaseFov, requestRender, THREE } from '../viewer';
 import { resize, loadFromStorageSource, loadNextAsset, loadPrevAsset, handleMultipleFiles, loadAssetByIndex } from '../fileLoader';
 import { resetViewWithImmersive } from '../cameraUtils';
@@ -20,7 +21,7 @@ import { setupFullscreenHandler, moveElementsToFullscreen } from '../fullscreenH
 import useOutsideClick from '../utils/useOutsideClick';
 import useSwipe from '../utils/useSwipe';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faRotateRight, faTableCellsLarge } from '@fortawesome/free-solid-svg-icons';
+import { faCamera, faRotateRight, faTableCellsLarge } from '@fortawesome/free-solid-svg-icons';
 import { faExpand, faCompress } from '@fortawesome/free-solid-svg-icons';
 import { initVrSupport } from '../vrMode';
 import { getFormatAccept } from '../formats/index';
@@ -59,6 +60,8 @@ function App() {
   const [viewerReady, setViewerReady] = useState(false);
   // Gallery (start screen) visibility
   const [galleryOpen, setGalleryOpen] = useState(true);
+  // "Default view & gallery preview" dialog
+  const [scanViewOpen, setScanViewOpen] = useState(false);
   const activeSourceId = useStore((state) => state.activeSourceId);
   
   // Track mesh state
@@ -411,6 +414,15 @@ function App() {
               >
                 <FontAwesomeIcon icon={faRotateRight} />
               </button>
+
+              <button
+                class="bottom-page-btn"
+                onClick={() => setScanViewOpen(true)}
+                aria-label="Save default view and gallery preview"
+                title="Save default view & gallery preview"
+              >
+                <FontAwesomeIcon icon={faCamera} />
+              </button>
              
               <button
                 class="bottom-page-btn"
@@ -435,6 +447,7 @@ function App() {
 )}
       </div>
 
+      {scanViewOpen && <ScanViewDialog onClose={() => setScanViewOpen(false)} />}
     </div>
   );
 }

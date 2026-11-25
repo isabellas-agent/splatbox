@@ -30,6 +30,10 @@ export const adaptRemoteAsset = (remoteAsset) => {
     _remoteAsset: remoteAsset,
     preview: remoteAsset.preview || null,
     previewSource: remoteAsset.previewSource || null,
+    // Per-scan presentation saved by the viewer (default pose + gallery animation)
+    view: remoteAsset.view || null,
+    gallery: remoteAsset.gallery || null,
+    animation: remoteAsset.animation || null,
     loaded: false,
     // Size from remote if known
     size: remoteAsset.size || null,
