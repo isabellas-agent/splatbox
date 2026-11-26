@@ -1,7 +1,6 @@
 /**
  * Viewer component.
  * Three.js canvas wrapper that handles:
- * - Drag and drop file loading
  * - Mouse/touch interactions (double-click to set anchor)
  * - Keyboard shortcuts for navigation and view control
  */
@@ -23,7 +22,7 @@ import {
 import { restoreHomeView, resetViewWithImmersive } from '../cameraUtils';
 import { startAnchorTransition } from '../cameraAnimations';
 import { cancelLoadZoomAnimation } from '../customAnimations';
-import { loadNextAsset, loadPrevAsset, resize, initDragDrop } from '../fileLoader';
+import { loadNextAsset, loadPrevAsset, resize } from '../fileLoader';
 
 
 /** Tags that should not trigger keyboard shortcuts */
@@ -99,8 +98,6 @@ function Viewer({ viewerReady }) {
       return;
     }
 
-    // Initialize drag/drop (file picker is handled in SidePanel)
-    initDragDrop();
 
     /**
      * Cancels any running load zoom animation.
@@ -138,6 +135,8 @@ function Viewer({ viewerReady }) {
       const splatHit = intersects.find((i) => i.object instanceof SplatMesh) ?? null;
 
       if (splatHit) {
+        // Orbiting a picked point needs orbit mode
+        if (useStore.getState().navMode === 'fly') useStore.getState().setNavMode('orbit');
         // Animate to hit point
         startAnchorTransition(splatHit.point, {
           duration: 700,

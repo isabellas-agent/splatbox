@@ -330,21 +330,6 @@ function DebugSettings() {
           </label>
         </div>
 
-        <div class="control-row">
-          <span class="control-label">Image glow</span>
-          <div class="control-track">
-            <input
-              type="range"
-              min="0"
-              max="40"
-              step="1"
-              value={bgBlur}
-              onInput={(e) => setBgBlur(Number(e.target.value) || 0)}
-            />
-            <span class="control-value">{bgBlur}px</span>
-          </div>
-        </div>
-
         <div class="control-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span class="control-label">Batch previews</span>

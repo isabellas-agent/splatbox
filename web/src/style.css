@@ -76,8 +76,8 @@ button, a, input, .sidebar-btn, .panel-toggle {
   flex: none;
   position: relative;
   z-index: 1;
-  background: #8080800d;
-  /* background: linear-gradient(145deg, rgba(22, 26, 36, 0.9), rgba(10, 12, 18, 0.9)); */
+  background: var(--viewer-bg, #000000);
+  transition: background-color 200ms ease, width 220ms ease, height 220ms ease;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 16px;
   /* overflow: hidden; */
@@ -125,11 +125,6 @@ button, a, input, .sidebar-btn, .panel-toggle {
   display: flex;
   transform: none;
   pointer-events: auto;
-}
-
-.viewer.dragging {
-  border-color: #57b8cb;
-  box-shadow: 0 0 0 2px rgba(110, 231, 255, 0.3);
 }
 
 .viewer canvas {
@@ -4012,4 +4007,72 @@ select option {
   .gallery-card__anim {
     display: none;
   }
+}
+
+/* Camera settings: navigation mode, help, background swatches */
+.segmented {
+  display: inline-flex;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.segmented button {
+  border: 0;
+  margin: 0;
+  padding: 5px 14px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(230, 236, 248, 0.75);
+  background: transparent;
+  cursor: pointer;
+}
+
+.segmented button + button {
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.segmented button.is-active {
+  background: rgba(110, 231, 255, 0.2);
+  color: #fff;
+}
+
+.nav-help {
+  font-size: 11px;
+  line-height: 1.7;
+  color: rgba(230, 236, 248, 0.55);
+}
+
+.nav-help kbd {
+  display: inline-block;
+  min-width: 14px;
+  padding: 0 4px;
+  margin: 0 1px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  font: inherit;
+  font-size: 10px;
+  text-align: center;
+  color: rgba(230, 236, 248, 0.85);
+}
+
+.bg-swatches {
+  display: flex;
+  gap: 8px;
+}
+
+.bg-swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+}
+
+.bg-swatch.is-active {
+  border-color: #6ee7ff;
+  box-shadow: 0 0 0 2px rgba(110, 231, 255, 0.35);
 }

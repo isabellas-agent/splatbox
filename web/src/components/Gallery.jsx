@@ -10,7 +10,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faCube,
-  faFolderOpen,
   faFolderPlus,
   faPen,
   faRotate,
@@ -438,7 +437,7 @@ function CollectionSection({ source, assets, query, tagFilter, selection, select
   );
 }
 
-function Gallery({ show, canReturn, onReturn, onOpenAsset, onPickFiles }) {
+function Gallery({ show, canReturn, onReturn, onOpenAsset }) {
   const [sources, setSources] = useState(() => getSourcesArray());
   const [assetsBySource, setAssetsBySource] = useState({});
   const [loading, setLoading] = useState(false);
@@ -703,14 +702,6 @@ function Gallery({ show, canReturn, onReturn, onOpenAsset, onPickFiles }) {
             />
           ))}
 
-          <section class="gallery-section gallery-section--other">
-            <div class="gallery-other">
-              <button class="gallery-btn" onClick={onPickFiles} title="View files from this device without uploading them">
-                <FontAwesomeIcon icon={faFolderOpen} />
-                <span>Open local files</span>
-              </button>
-            </div>
-          </section>
         </main>
       </div>
 

@@ -2,12 +2,11 @@ import { useEffect, useState, useRef, useCallback } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import useSwipe from '../utils/useSwipe';
 import { useStore } from '../store';
-import { loadAssetByIndex, handleAddFiles } from '../fileLoader';
+import { loadAssetByIndex } from '../fileLoader';
 import { removeAsset, clearAssets, getAssetList, getCurrentAssetIndex } from '../assetManager';
 import { deleteFileSettings, clearAllFileSettings, loadPreviewBlob } from '../fileStorage';
-import { getFormatAccept } from '../formats/index';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPlus, faTrash } from '@fortawesome/free-solid-svg-icons';
+import { faTrash } from '@fortawesome/free-solid-svg-icons';
 import { getSource } from '../storage/index.js';
 
 function AssetSidebar() {
@@ -19,7 +18,6 @@ function AssetSidebar() {
 
   const isVisible = useStore((state) => state.assetSidebarOpen);
   const setIsVisible = useStore((state) => state.setAssetSidebarOpen);
-  const imageAccept = '.jpg,.jpeg,.png,.webp,.avif,.tif,.tiff,.heic,image/*';
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteScope, setDeleteScope] = useState('single'); // 'single' or 'all'
   const [clearMetadata, setClearMetadata] = useState(false);
@@ -27,15 +25,12 @@ function AssetSidebar() {
   const [brokenPreviews, setBrokenPreviews] = useState(new Set()); // Track broken preview indices
   const [suppressInteractions, setSuppressInteractions] = useState(false);
   const sidebarRef = useRef(null);
-  const fileInputRef = useRef(null);
   const hoverTargetRef = useRef(null);
   const openedByHoverRef = useRef(false);
   const hideTimeoutRef = useRef(null);
   const hoverOpenTimeoutRef = useRef(null);
   const suppressTimeoutRef = useRef(null);
   const repairingRef = useRef(new Set()); // Track indices being repaired
-
-  const formatAccept = getFormatAccept();
 
   // Portal target for modal - render to fullscreen-safe container
   const [portalTarget, setPortalTarget] = useState(null);
@@ -118,22 +113,6 @@ function AssetSidebar() {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isVisible, hideSidebar, showDeleteModal]);
-
-  const handleAddClick = () => {
-    const current = assets[currentAssetIndex];
-    const isServer = current?.sourceType === 'server-collection';
-    console.log('[AssetSidebar] Add clicked. server collection?', isServer, 'sourceId:', current?.sourceId);
-    fileInputRef.current?.click();
-    openedByHoverRef.current = false; // opened by explicit click
-  };
-
-  const handleFileChange = async (event) => {
-    const files = event.target.files;
-    if (files && files.length > 0) {
-      await handleAddFiles(Array.from(files));
-      event.target.value = '';
-    }
-  };
 
   const handleDeleteClick = () => {
     setDeleteScope('single');
@@ -349,15 +328,6 @@ function AssetSidebar() {
 
   return (
     <>
-      <input 
-        ref={fileInputRef}
-        type="file" 
-        accept={`${formatAccept},${imageAccept}`} 
-        multiple 
-        hidden 
-        onChange={handleFileChange}
-      />
-
       {/* Invisible hover target on left edge */}
       <div 
         ref={hoverTargetRef}
@@ -403,14 +373,6 @@ function AssetSidebar() {
         </div>
         <div class="sidebar-footer">
           <div class="sidebar-controls">
-            <button 
-              class="sidebar-btn add" 
-              onClick={handleAddClick}
-              title="Add files"
-            >
-              <FontAwesomeIcon icon={faPlus} />
-            </button>
-            
             <button 
               class="sidebar-btn delete" 
               onClick={handleDeleteClick}

@@ -9,7 +9,13 @@ with a WebXR viewer that runs in the Quest 3 browser. One container, one `/data`
 - **Manage scans**: per-scan title, description and tags (pencil on a card); **Select** mode for bulk
   move / copy to another collection, tagging and delete. Thumbnails and metadata move with the scan.
 - **Viewer + VR mode** (Spark 2 renderer, `.ply` / `.sog` / `.spz` / `.splat` / `.ksplat`), served by the app itself.
-  The grid button (bottom left) goes back to the gallery.
+  Flat screen or real WebXR VR (no side-by-side stereo mode). The grid button (bottom left) goes back to the gallery.
+  Scans are always opened from a server collection; there is no "open local file" path.
+- **6DoF navigation** on the flat screen (see below) and a **solid background colour** (black, dark, gray,
+  light, white) chosen under *Camera Settings*.
+- **Large scans**: files from 64 MB up are streamed by Spark straight from the URL instead of being copied
+  into memory several times, file bytes are not kept after loading, and neighbouring scans over 48 MB are not
+  preloaded. For multi-GB `.ply` files, converting to `.sog`/`.spz` or decimating still saves the most RAM.
 - **In-VR collection browser**: a floating panel with the scans of the current collection, so you can switch
   scans (and collections) without leaving VR.
 - **Thumbnails** are rendered in the browser the first time a scan is opened and stored on the server
@@ -41,6 +47,16 @@ with a WebXR viewer that runs in the Quest 3 browser. One container, one `/data`
 ![in-VR panel](docs/vr-panel.png)
 
 *The in-VR collection panel (rendered on a flat page for the screenshot).*
+
+## Flat-screen controls
+
+| Input | Action |
+|---|---|
+| W / S, A / D, E / Q | Move forward/back, left/right, up/down |
+| Shift / Alt (hold) | Move faster / slower (base speed: *Move speed* slider) |
+| F | Toggle **Orbit** (rotate around a pivot, wheel zooms to the cursor) and **Fly** (look around where you stand, wheel moves forward) |
+| Double-click a splat | Set the orbit pivot there (switches to Orbit) |
+| Drag / right-drag | Rotate / pan |
 
 ## Quest controls (VR)
 

@@ -63,7 +63,53 @@ const ensureAssetFile = async (asset) => {
   throw new Error("Asset has no file and no source");
 };
 
+/**
+ * Server scans at or above this size are streamed by Spark straight from their
+ * URL instead of being downloaded into JS memory first (saves several full
+ * copies of the file). Camera metadata embedded in such files is skipped.
+ */
+export const STREAM_THRESHOLD_BYTES = 64 * 1024 * 1024;
+
+const getStreamUrl = async (asset) => {
+  if (asset.file || !asset.sourceId || !asset._remoteAsset) return null;
+  const size = asset.size ?? asset._remoteAsset.size;
+  if (!size || size < STREAM_THRESHOLD_BYTES) return null;
+  const { getSource } = await import("./storage/sourceManager.js");
+  return getSource(asset.sourceId)?.getAssetUrl?.(asset._remoteAsset) ?? null;
+};
+
+const createStreamedEntry = async (asset, url) => {
+  const formatHandler = getFormatHandler({ name: asset.name });
+  if (!formatHandler) {
+    const err = new Error(`Unsupported file: ${asset.name}`);
+    err.code = "UNSUPPORTED_FORMAT";
+    throw err;
+  }
+  const mesh = await formatHandler.loadData({ file: { name: asset.name }, url });
+  mesh.visible = false;
+  mesh.userData.assetId = asset.id;
+  ensureGroup().add(mesh);
+  let storedSettings = null;
+  try {
+    storedSettings = await loadFileSettings(asset.name);
+  } catch {
+    /* ignore */
+  }
+  return {
+    id: asset.id,
+    asset,
+    mesh,
+    cameraMetadata: null,
+    formatLabel: formatHandler.label,
+    storedSettings,
+    focusDistanceOverride: storedSettings?.focusDistance,
+  };
+};
+
 const createEntry = async (asset) => {
+  const streamUrl = await getStreamUrl(asset);
+  if (streamUrl) return createStreamedEntry(asset, streamUrl);
+
   // Get file - may need to load from storage source
   const file = await ensureAssetFile(asset);
   if (!file) {
@@ -72,8 +118,9 @@ const createEntry = async (asset) => {
     throw err;
   }
   
-  // Update asset's file reference
-  asset.file = file;
+  // Server scans are re-fetched (HTTP cache) when needed; do not keep the bytes alive
+  const fromSource = !!(asset.sourceId && asset._remoteAsset);
+  if (!fromSource) asset.file = file;
 
   const formatHandler = getFormatHandler(file);
   if (!formatHandler) {
@@ -103,6 +150,7 @@ const createEntry = async (asset) => {
   }
 
   const mesh = await formatHandler.loadData({ file, bytes });
+  if (fromSource) asset.file = null;
   mesh.visible = false;
   mesh.userData.assetId = asset.id;
   ensureGroup().add(mesh);

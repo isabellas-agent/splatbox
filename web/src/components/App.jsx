@@ -13,10 +13,11 @@ import MobileSheet from './MobileSheet';
 import AssetSidebar from './AssetSidebar';
 import AssetNavigation from './AssetNavigation';
 import ScanViewDialog from './ScanViewDialog';
-import { initViewer, startRenderLoop, currentMesh, camera, controls, defaultCamera, defaultControls, dollyZoomBaseDistance, dollyZoomBaseFov, requestRender, THREE } from '../viewer';
-import { resize, loadFromStorageSource, loadNextAsset, loadPrevAsset, handleMultipleFiles, loadAssetByIndex } from '../fileLoader';
+import { initViewer, startRenderLoop, currentMesh } from '../viewer';
+import { initNavigation } from '../navigation';
+import { setCameraFov } from './CameraControls';
+import { resize, loadFromStorageSource, loadNextAsset, loadPrevAsset, loadAssetByIndex } from '../fileLoader';
 import { resetViewWithImmersive } from '../cameraUtils';
-import { enableImmersiveMode, disableImmersiveMode, setImmersiveSensitivityMultiplier, setTouchPanEnabled, syncImmersiveBaseline } from '../immersiveMode';
 import { setupFullscreenHandler, moveElementsToFullscreen } from '../fullscreenHandler';
 import useOutsideClick from '../utils/useOutsideClick';
 import useSwipe from '../utils/useSwipe';
@@ -24,16 +25,8 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCamera, faRotateRight, faTableCellsLarge } from '@fortawesome/free-solid-svg-icons';
 import { faExpand, faCompress } from '@fortawesome/free-solid-svg-icons';
 import { initVrSupport } from '../vrMode';
-import { getFormatAccept } from '../formats/index';
 
 
-const updateControlSpeedsForFov = (fov) => {
-  if (!controls) return;
-  const fovScale = THREE.MathUtils.clamp(fov / defaultCamera.fov, 0.05, 2.0);
-  controls.rotateSpeed = Math.max(0.02, defaultControls.rotateSpeed * fovScale * 0.45);
-  controls.zoomSpeed = Math.max(0.05, defaultControls.zoomSpeed * fovScale * 0.8);
-  controls.panSpeed = Math.max(0.05, defaultControls.panSpeed * fovScale * 0.8);
-};
 
 function App() {
   // Store state
@@ -52,9 +45,6 @@ function App() {
   const fov = useStore((state) => state.fov);
   const setFov = useStore((state) => state.setFov);
   const viewerFovSlider = useStore((state) => state.viewerFovSlider);
-  const immersiveMode = useStore((state) => state.immersiveMode);
-  const setImmersiveMode = useStore((state) => state.setImmersiveMode);
-  const immersiveSensitivity = useStore((state) => state.immersiveSensitivity);
   
   // Local state for viewer initialization
   const [viewerReady, setViewerReady] = useState(false);
@@ -67,9 +57,6 @@ function App() {
   // Track mesh state
   const [hasMesh, setHasMesh] = useState(false);
   const hasMeshRef = useRef(false);
-
-  // File input for "Open local files"
-  const fileInputRef = useRef(null);
 
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -192,70 +179,10 @@ function App() {
 
   const handleOverlayFovChange = useCallback((event) => {
     const newFov = Number(event.target.value);
-    if (!Number.isFinite(newFov) || !camera || !controls) return;
-
+    if (!Number.isFinite(newFov)) return;
     setFov(newFov);
-
-    if (dollyZoomBaseDistance && dollyZoomBaseFov) {
-      const baseTan = Math.tan(THREE.MathUtils.degToRad(dollyZoomBaseFov / 2));
-      const newTan = Math.tan(THREE.MathUtils.degToRad(newFov / 2));
-      const newDistance = dollyZoomBaseDistance * (baseTan / newTan);
-
-      const direction = new THREE.Vector3()
-        .subVectors(camera.position, controls.target)
-        .normalize();
-      camera.position.copy(controls.target).addScaledVector(direction, newDistance);
-    }
-
-    camera.fov = newFov;
-    camera.updateProjectionMatrix();
-    updateControlSpeedsForFov(newFov);
-    controls.update();
-    if (immersiveMode) {
-      syncImmersiveBaseline();
-    }
-    requestRender();
-  }, [setFov, immersiveMode]);
-
-  const handleImmersiveToggle = useCallback(async () => {
-    if (immersiveMode) {
-      disableImmersiveMode();
-      setImmersiveMode(false);
-      addLog('Immersive mode disabled');
-      return;
-    }
-
-    setTouchPanEnabled(true);
-    setImmersiveSensitivityMultiplier(immersiveSensitivity);
-    const success = await enableImmersiveMode();
-    if (success) {
-      setImmersiveMode(true);
-      addLog('Immersive mode enabled - tilt device to orbit');
-    } else {
-      setImmersiveMode(false);
-      addLog('Could not enable immersive mode');
-    }
-  }, [immersiveMode, setImmersiveMode, addLog, immersiveSensitivity]);
-
-  /**
-   * Title card actions: file picker
-   */
-  const formatAccept = getFormatAccept();
-
-  const handlePickFile = useCallback(() => {
-    (async () => {
-      fileInputRef.current?.click();
-    })();
-  }, []);
-
-  const handleFileChange = useCallback(async (event) => {
-    const files = event.target.files;
-    if (files && files.length > 0) {
-      setGalleryOpen(false);
-      await handleMultipleFiles(Array.from(files));
-      event.target.value = '';
-    }
-  }, []);
+    setCameraFov(newFov);
+  }, [setFov]);
 
   /**
    * Gallery actions: open a scan from a collection in the viewer.
@@ -315,6 +242,7 @@ function App() {
     if (!viewerEl) return;
     
     initViewer(viewerEl);
+    initNavigation();
     startRenderLoop();
     void initVrSupport(viewerEl);
     setViewerReady(true);
@@ -339,20 +267,11 @@ function App() {
   return (
     <div class={`page ${panelOpen ? 'panel-open' : ''}`}>
       <AssetSidebar />
-      <input 
-        ref={fileInputRef}
-        type="file" 
-        accept={formatAccept} 
-        multiple 
-        hidden 
-        onChange={handleFileChange}
-      />
       <Gallery
         show={galleryOpen}
         canReturn={assets.length > 0}
         onReturn={() => setGalleryOpen(false)}
         onOpenAsset={handleOpenAsset}
-        onPickFiles={handlePickFile}
       />
         <Viewer viewerReady={viewerReady} />
       {/* Separate swipe target near bottom controls (debug green) */}
@@ -432,15 +351,6 @@ function App() {
               >
                 <FontAwesomeIcon icon={isFullscreen ? faCompress : faExpand} />
               </button>
-{isMobile && <button
-                class={`bottom-page-btn immersive-toggle ${immersiveMode ? 'is-active' : 'is-inactive'}`}
-                onClick={handleImmersiveToggle}
-                aria-pressed={immersiveMode}
-                aria-label={immersiveMode ? 'Disable immersive mode' : 'Enable immersive mode'}
-                title={immersiveMode ? 'Disable immersive mode' : 'Enable immersive mode'}
-              >
-                Imm
-              </button>}
             </>
         </div>
         </>

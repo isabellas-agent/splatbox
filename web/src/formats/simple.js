@@ -5,8 +5,8 @@ const makeFormat = (id, label, fileType) => ({
   id,
   label,
   extensions: [id],
-  async loadData({ file, bytes }) {
-    const mesh = new SplatMesh({ fileBytes: bytes, fileType, fileName: file?.name });
+  async loadData({ file, bytes, url }) {
+    const mesh = new SplatMesh({ ...(url ? { url } : { fileBytes: bytes }), fileType, fileName: file?.name });
     await mesh.initialized;
     return mesh;
   },

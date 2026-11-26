@@ -18,6 +18,7 @@ import {
 import { useStore } from "./store.js";
 import { startSmoothResetAnimation, cancelResetAnimation } from "./cameraAnimations.js";
 import { resize } from "./layout.js";
+import { getOrbitPivot } from "./navigation.js";
 
 // Helper to access store
 const getStoreState = () => useStore.getState();
@@ -153,9 +154,12 @@ const roundPose = (n) => Math.round(n * 1e4) / 1e4;
  */
 export const captureSavedView = () => {
   if (!camera || !controls) return null;
+  // In fly mode the controls target sits right in front of the camera; store a
+  // pivot at scan depth instead so orbiting from the saved view works.
+  const target = getOrbitPivot() || controls.target;
   return {
     position: [roundPose(camera.position.x), roundPose(camera.position.y), roundPose(camera.position.z)],
-    target: [roundPose(controls.target.x), roundPose(controls.target.y), roundPose(controls.target.z)],
+    target: [roundPose(target.x), roundPose(target.y), roundPose(target.z)],
     fov: roundPose(camera.fov),
   };
 };

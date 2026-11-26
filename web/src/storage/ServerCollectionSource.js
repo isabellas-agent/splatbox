@@ -112,10 +112,22 @@ export class ServerCollectionSource extends AssetSource {
     return assets;
   }
 
+  /** Absolute URL of the scan file (used by Spark to stream large files). */
+  getAssetUrl(asset) {
+    return new URL(this._fileUrl(asset.path), window.location.href).href;
+  }
+
   async fetchAssetData(asset) {
     const response = await fetch(this._fileUrl(asset.path));
     if (!response.ok) throw new Error(`Failed to fetch asset: ${response.status} ${response.statusText}`);
     return response.arrayBuffer();
+  }
+
+  /** Blob straight from the response (no intermediate ArrayBuffer copy). */
+  async fetchAssetBlob(asset) {
+    const response = await fetch(this._fileUrl(asset.path));
+    if (!response.ok) throw new Error(`Failed to fetch asset: ${response.status} ${response.statusText}`);
+    return response.blob();
   }
 
   async fetchAssetStream(asset) {

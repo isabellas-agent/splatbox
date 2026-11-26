@@ -52,7 +52,6 @@ export const setNavigationLocked = (locked) => {
 let hasLoadedFirstAsset = false;
 
 import {
-  setAssetList as setAssetListManager,
   getAssetList,
   getCurrentAssetIndex,
   setCurrentAssetIndex as setCurrentAssetIndexManager,
@@ -63,7 +62,6 @@ import {
   nextAsset,
   prevAsset,
   captureCurrentAssetPreview,
-  addAssets,
 } from "./assetManager.js";
 import {
   activateSplatEntry,
@@ -76,6 +74,9 @@ import {
 
 /** Warmup frames for renderer stabilization (fresh load) */
 const WARMUP_FRAMES = 120;
+
+/** Neighbouring scans larger than this are not preloaded (memory) */
+const PRELOAD_MAX_BYTES = 48 * 1024 * 1024;
 
 /** Reduced warmup frames for preloaded/cached splats */
 const WARMUP_FRAMES_CACHED = 15;
@@ -352,12 +353,17 @@ export const loadSplatFile = async (assetOrFile, options = {}) => {
     viewerEl.classList.add("has-mesh");
     spark.update({ scene, camera });
 
-    // Fire-and-forget neighbor preloading (don't block current asset)
-    const neighborIds = new Set(neighborAssets.map((neighbor) => neighbor.id));
+    // Fire-and-forget neighbor preloading (don't block current asset).
+    // Only small scans are preloaded: every cached scan costs GPU + CPU memory.
+    const sizeOf = (a) => a?.size ?? a?._remoteAsset?.size ?? a?.file?.size ?? Infinity;
+    const preloadable = sizeOf(asset) <= PRELOAD_MAX_BYTES
+      ? neighborAssets.filter((n) => n.id === asset.id || sizeOf(n) <= PRELOAD_MAX_BYTES)
+      : neighborAssets.filter((n) => n.id === asset.id);
+    const neighborIds = new Set([asset.id, ...preloadable.map((neighbor) => neighbor.id)]);
     retainOnlySplats(neighborIds);
-    
+
     // Preload neighbors in background without awaiting
-    neighborAssets
+    preloadable
       .filter((neighbor) => neighbor.id !== asset.id)
       .forEach((neighbor) => {
         ensureSplatEntry(neighbor)
@@ -564,9 +570,9 @@ export const loadSplatFile = async (assetOrFile, options = {}) => {
         requestAnimationFrame(warmup);
 
         if (!bgCaptured && warmupFrames === BG_CAPTURE_FRAME && !skipBgGeneration) {
-          // Also skip background capture in VR/stereo mode
+          // Also skip background capture in VR mode
           const bgStoreState = getStoreState();
-          const isDistortedBg = bgStoreState.stereoEnabled || bgStoreState.vrSessionActive;
+          const isDistortedBg = bgStoreState.vrSessionActive;
           if (!isDistortedBg) {
             bgCaptured = true;
             captureAndApplyBackground({ renderer, composer, scene, THREE });
@@ -577,9 +583,9 @@ export const loadSplatFile = async (assetOrFile, options = {}) => {
         if (!previewCaptured && warmupFrames === previewFrame) {
           previewCaptured = true;
           
-          // Skip preview capture if VR or stereo mode is active (would produce distorted preview)
+          // Skip preview capture if VR is active (would produce distorted preview)
           const currentStoreState = getStoreState();
-          const isDistortedMode = currentStoreState.stereoEnabled || currentStoreState.vrSessionActive;
+          const isDistortedMode = currentStoreState.vrSessionActive;
           const shouldGeneratePreview = !isDistortedMode && (!asset.preview || asset.previewSource === 'image');
 
           if (shouldGeneratePreview) {
@@ -664,241 +670,6 @@ export const loadSplatFile = async (assetOrFile, options = {}) => {
 
     if (wasImmersiveModeActive) {
       resumeImmersiveMode();
-    }
-  }
-};
-
-/**
- * Prevents default browser behavior for drag events.
- * @param {DragEvent} event - Drag event
- */
-const preventDefaults = (event) => {
-  event.preventDefault();
-  event.stopPropagation();
-};
-
-/**
- * Initializes drag-and-drop file loading on the viewer element.
- * Supports both individual files and folder drops.
- * Called from Viewer component after viewer is ready.
- */
-export const initDragDrop = () => {
-  const viewerEl = document.getElementById('viewer');
-  if (!viewerEl) return;
-  
-  ["dragenter", "dragover"].forEach((eventName) => {
-    viewerEl.addEventListener(eventName, (event) => {
-      preventDefaults(event);
-      viewerEl.classList.add("dragging");
-    });
-  });
-
-  ["dragleave", "drop"].forEach((eventName) => {
-    viewerEl.addEventListener(eventName, (event) => {
-      preventDefaults(event);
-      if (eventName === "dragleave") {
-        viewerEl.classList.remove("dragging");
-      }
-    });
-  });
-
-  viewerEl.addEventListener("drop", async (event) => {
-    viewerEl.classList.remove("dragging");
-    
-    const items = event.dataTransfer?.items;
-    const files = [];
-    
-    if (items) {
-      // Try to get folder contents using webkitGetAsEntry
-      const entries = [];
-      for (const item of items) {
-        const entry = item.webkitGetAsEntry?.();
-        if (entry) {
-          entries.push(entry);
-        }
-      }
-      
-      if (entries.length > 0) {
-        // Process entries (files and folders)
-        const processedFiles = await processEntries(entries);
-        files.push(...processedFiles);
-      } else {
-        // Fallback to regular file list
-        const fileList = event.dataTransfer?.files;
-        if (fileList) {
-          files.push(...Array.from(fileList));
-        }
-      }
-    } else {
-      // Fallback to regular file list
-      const fileList = event.dataTransfer?.files;
-      if (fileList) {
-        files.push(...Array.from(fileList));
-      }
-    }
-    
-    if (files.length > 0) {
-      await handleMultipleFiles(files);
-    }
-  });
-};
-
-/**
- * Recursively processes FileSystemEntry objects from drag/drop.
- * Handles both files and directories.
- * @param {FileSystemEntry[]} entries - Array of file system entries
- * @returns {Promise<File[]>} Array of File objects
- */
-const processEntries = async (entries) => {
-  const files = [];
-  
-  /**
-   * Reads a single entry (file or directory).
-   * @param {FileSystemEntry} entry - Entry to read
-   * @returns {Promise<File[]>} Array of files from this entry
-   */
-  const readEntry = async (entry) => {
-    if (entry.isFile) {
-      return new Promise((resolve) => {
-        entry.file((file) => resolve([file]), () => resolve([]));
-      });
-    } else if (entry.isDirectory) {
-      const dirReader = entry.createReader();
-      const subEntries = await new Promise((resolve) => {
-        const allEntries = [];
-        const readEntries = () => {
-          dirReader.readEntries((entries) => {
-            if (entries.length === 0) {
-              resolve(allEntries);
-            } else {
-              allEntries.push(...entries);
-              readEntries();
-            }
-          }, () => resolve(allEntries));
-        };
-        readEntries();
-      });
-      const subFiles = await processEntries(subEntries);
-      return subFiles;
-    }
-    return [];
-  };
-  
-  for (const entry of entries) {
-    const entryFiles = await readEntry(entry);
-    files.push(...entryFiles);
-  }
-  
-  return files;
-};
-
-/**
- * Processes multiple files from drag/drop or file picker.
- * Filters supported formats, updates asset gallery, and loads first file.
- * Called from SidePanel (file picker) and initDragDrop (drag/drop).
- * 
- * @param {File[]} files - Array of File objects to process
- */
-export const handleMultipleFiles = async (files) => {
-  if (!files || files.length === 0) return;
-  const store = getStoreState();
-  store.clearActiveSource();
-  const result = await setAssetListManager(files);
-  
-  if (result.count === 0) {
-    store.setStatus(`No supported files found. Supported: ${supportedExtensionsText}`);
-    return;
-  }
-  
-  resetSplatManager();
-  setCurrentMesh(null);
-  hasLoadedFirstAsset = false; // Reset first load flag for new asset list
-  spark.update({ scene, camera });
-
-  // Update store with assets
-  store.setAssets(result.assets);
-  
-  if (result.count === 1) {
-    // Single file - load directly
-    // First, hydrate preview from storage (same as multi-file branch)
-    const asset = result.assets[0];
-    if (!asset.preview) {
-      const storedPreview = await hydrateAssetPreviewFromStorage(asset);
-      if (storedPreview?.blob) {
-        store.updateAssetPreview(0, asset.preview);
-      }
-    }
-    
-    // Set up preview generation callback (same as multi-file branch)
-    onPreviewGenerated((asset, index) => {
-      store.updateAssetPreview(index, asset.preview);
-    });
-    
-    setCurrentAssetIndexManager(0);
-    store.setCurrentAssetIndex(0);
-    await loadSplatFile(asset);
-  } else {
-    // Multiple files - show gallery and start loading
-    store.addLog(`Found ${result.count} assets`);
-    
-    // Load stored previews from IndexedDB for all assets
-    for (let i = 0; i < result.assets.length; i++) {
-      const asset = result.assets[i];
-      if (asset.preview) continue;
-      const storedPreview = await hydrateAssetPreviewFromStorage(asset);
-      if (storedPreview?.blob) {
-        store.updateAssetPreview(i, asset.preview);
-      }
-    }
-    
-    // Set up preview generation callback
-    onPreviewGenerated((asset, index) => {
-      store.updateAssetPreview(index, asset.preview);
-    });
-    
-    // Load first asset (preview will be captured automatically after warmup)
-    setCurrentAssetIndexManager(0);
-    store.setCurrentAssetIndex(0);
-    await loadSplatFile(result.assets[0]);
-  }
-};
-
-/**
- * Loads a specific asset by index.
- * Called from AssetGallery component when user clicks a thumbnail.
- * @param {number} index - Asset index to load
- */
-/**
- * Adds files to the existing asset list.
- */
-export const handleAddFiles = async (files) => {
-  if (!files || files.length === 0) return;
-  const store = getStoreState();
-  store.clearActiveSource();
-  
-  const result = await addAssets(files);
-  
-  if (result.added === 0) {
-    store.setStatus(`No supported files found. Supported: ${supportedExtensionsText}`);
-    return;
-  }
-  
-  // Update store with new assets list
-  const allAssets = getAssetList();
-  store.setAssets([...allAssets]);
-  
-  store.addLog(`Added ${result.added} assets`);
-  
-  // Load stored previews for new assets
-  const startIndex = allAssets.length - result.added;
-  
-  for (let i = 0; i < result.newAssets.length; i++) {
-    const asset = result.newAssets[i];
-    const globalIndex = startIndex + i;
-    if (asset.preview) continue;
-    const storedPreview = await hydrateAssetPreviewFromStorage(asset);
-    if (storedPreview?.blob) {
-      store.updateAssetPreview(globalIndex, asset.preview);
     }
   }
 };

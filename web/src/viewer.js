@@ -22,7 +22,6 @@ export let camera;
 export let controls;
 export let spark;
 export let raycaster;
-export let stereoCamera;
 
 // Default settings (captured after initialization)
 export let defaultCamera;
@@ -33,7 +32,6 @@ export let currentMesh = null;
 export let activeCamera = null;
 export let needsRender = true;
 export let originalImageAspect = null;
-export let stereoEnabled = false;
 let renderSuspended = false;
 
 // Dolly zoom state
@@ -56,34 +54,6 @@ export const setOriginalImageAspect = (aspect) => { originalImageAspect = aspect
 export const setDollyZoomEnabled = (enabled) => { dollyZoomEnabled = enabled; };
 export const setBgImageUrl = (url) => { bgImageUrl = url; };
 
-const ensureStereoCamera = () => {
-  if (stereoCamera) return;
-  stereoCamera = new THREE.StereoCamera();
-  stereoCamera.aspect = 0.5; // Default for side-by-side (each eye gets half width)
-};
-
-export const setStereoEffectEnabled = (enabled) => {
-  stereoEnabled = enabled;
-  if (enabled) {
-    ensureStereoCamera();
-  }
-  requestRender();
-};
-
-export const setStereoEyeSeparation = (eyeSep) => {
-  if (stereoCamera) {
-    stereoCamera.eyeSep = eyeSep;
-    requestRender();
-  }
-};
-
-export const setStereoAspect = (aspect) => {
-  if (stereoCamera) {
-    stereoCamera.aspect = aspect;
-    requestRender();
-  }
-};
-
 /**
  * Gets the current focus distance (camera to orbit target distance).
  * @returns {number|null} Distance in scene units, or null if not available
@@ -93,56 +63,6 @@ export const getFocusDistance = () => {
   return camera.position.distanceTo(controls.target);
 };
 
-/**
- * Calculates optimal stereo eye separation based on focus distance.
- * Uses a ratio of approximately 1/20 of the focus distance, which provides
- * noticeable stereo depth while remaining comfortable.
- * @param {number} focusDistance - The distance to the focal point
- * @param {number} [ratio=0.05] - Separation ratio (default ~1/20)
- * @returns {number} Optimal eye separation in scene units
- */
-export const calculateOptimalEyeSeparation = (focusDistance, ratio = 0.05) => {
-  // Clamp to reasonable bounds (10mm to 600mm in scene units where 1 unit ≈ 1m)
-  const minSep = 0.01;
-  const maxSep = 0.6;
-  const calculated = focusDistance * ratio;
-  return Math.max(minSep, Math.min(maxSep, calculated));
-};
-
-/** 
- * Renders scene in side-by-side stereo using StereoCamera directly.
- * This gives us access to the aspect property for VR compatibility.
- */
-const renderStereo = () => {
-  if (!renderer || !camera || !stereoCamera) return;
-
-  // Update scene matrices
-  if (scene.matrixWorldAutoUpdate === true) scene.updateMatrixWorld();
-  if (camera.parent === null && camera.matrixWorldAutoUpdate === true) camera.updateMatrixWorld();
-
-  // Update stereo camera from main camera
-  stereoCamera.update(camera);
-
-  const size = renderer.getSize(new THREE.Vector2());
-  const currentAutoClear = renderer.autoClear;
-
-  renderer.autoClear = false;
-  renderer.clear();
-  renderer.setScissorTest(true);
-
-  // Render left eye
-  renderer.setScissor(0, 0, size.width / 2, size.height);
-  renderer.setViewport(0, 0, size.width / 2, size.height);
-  renderer.render(scene, stereoCamera.cameraL);
-
-  // Render right eye
-  renderer.setScissor(size.width / 2, 0, size.width / 2, size.height);
-  renderer.setViewport(size.width / 2, 0, size.width / 2, size.height);
-  renderer.render(scene, stereoCamera.cameraR);
-
-  renderer.setScissorTest(false);
-  renderer.autoClear = currentAutoClear;
-};
 
 export const requestRender = () => {
   needsRender = true;
@@ -154,26 +74,7 @@ export const requestRender = () => {
  */
 export const forceRenderNow = () => {
   if (!renderer || !composer || !camera) return;
-  if (stereoEnabled && stereoCamera) {
-    // For stereo, call the stereo render path
-    if (scene.matrixWorldAutoUpdate === true) scene.updateMatrixWorld();
-    if (camera.parent === null && camera.matrixWorldAutoUpdate === true) camera.updateMatrixWorld();
-    stereoCamera.update(camera);
-    const size = renderer.getSize(new THREE.Vector2());
-    renderer.autoClear = false;
-    renderer.clear();
-    renderer.setScissorTest(true);
-    renderer.setScissor(0, 0, size.width / 2, size.height);
-    renderer.setViewport(0, 0, size.width / 2, size.height);
-    renderer.render(scene, stereoCamera.cameraL);
-    renderer.setScissor(size.width / 2, 0, size.width / 2, size.height);
-    renderer.setViewport(size.width / 2, 0, size.width / 2, size.height);
-    renderer.render(scene, stereoCamera.cameraR);
-    renderer.setScissorTest(false);
-    renderer.autoClear = true;
-  } else {
-    composer.render();
-  }
+  composer.render();
   needsRender = false;
 };
 
@@ -248,23 +149,15 @@ export const initViewer = (viewerEl) => {
   // Raycaster for double-click
   raycaster = new THREE.Raycaster();
 
-  // Background image container
-  bgImageContainer = document.createElement("div");
-  bgImageContainer.className = "bg-image-container";
-  viewerEl.insertBefore(bgImageContainer, viewerEl.firstChild);
-
-  // Subscribe to bgBlur from store to keep CSS filter in sync
-  import('./store.js').then(({ useStore }) => {
-    const applyBlur = (value) => {
-      if (!bgImageContainer) return;
-      const clamped = Math.max(0, Math.min(40, Number(value) || 0));
-      bgImageContainer.style.setProperty('--bg-blur', `${clamped}px`);
-      // Also set explicit filter for browsers that ignore custom property here
-      bgImageContainer.style.filter = `blur(${clamped}px)`;
+  // Solid background color (CSS on the viewer element; the canvas stays transparent)
+  import('./store.js').then(({ useStore, BACKGROUND_COLORS }) => {
+    const applyBgColor = (id) => {
+      const color = BACKGROUND_COLORS.find((c) => c.id === id) ?? BACKGROUND_COLORS[0];
+      viewerEl.style.setProperty('--viewer-bg', color.value);
+      requestRender();
     };
-
-    applyBlur(useStore.getState().bgBlur);
-    useStore.subscribe((s) => s.bgBlur, applyBlur);
+    applyBgColor(useStore.getState().bgColor);
+    useStore.subscribe((s) => s.bgColor, applyBgColor);
   }).catch(() => {});
 
   // FPS overlay
@@ -288,15 +181,6 @@ export const initViewer = (viewerEl) => {
   // Initialize dolly zoom baseline
   updateDollyZoomBaselineFromCamera();
 
-  // Apply default camera range (imported after initialization to avoid circular dependency)
-  setTimeout(() => {
-    import('./cameraUtils.js').then(({ applyCameraRangeDegrees }) => {
-      import('./store.js').then(({ useStore }) => {
-        const defaultRange = useStore.getState().cameraRange;
-        applyCameraRangeDegrees(defaultRange);
-      });
-    });
-  }, 0);
 
   // On-demand rendering
   controls.addEventListener("change", requestRender);
@@ -337,11 +221,7 @@ export const startRenderLoop = () => {
     const controlsNeedUpdate = controls.update();
 
     if (needsRender || controlsNeedUpdate) {
-      if (stereoEnabled && stereoCamera) {
-        renderStereo();
-      } else {
-        composer.render();
-      }
+      composer.render();
       needsRender = false;
       frameCount++;
     }

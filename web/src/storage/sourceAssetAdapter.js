@@ -70,9 +70,8 @@ export const loadAssetFile = async (asset) => {
     }
   }
 
-  // Fetch file from source
+  // Fetch file from source (the caller decides whether to keep it)
   const file = await source.fetchAssetFile(asset._remoteAsset);
-  asset.file = file;
 
   // Update source access time
   await touchSource(asset.sourceId);

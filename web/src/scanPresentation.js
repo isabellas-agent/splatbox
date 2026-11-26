@@ -26,6 +26,9 @@ import {
   currentMesh,
   forceRenderNow,
   requestRender,
+  suspendRenderLoop,
+  resumeRenderLoop,
+  spark,
   THREE,
 } from './viewer.js';
 import { getSource } from './storage/index.js';
@@ -33,6 +36,10 @@ import { resize } from './layout.js';
 import { captureCurrentAssetPreview } from './assetManager.js';
 import { applySavedView, captureSavedView, saveHomeView } from './cameraUtils.js';
 import { savePreviewBlob } from './fileStorage.js';
+import { getOrbitPivot } from './navigation.js';
+
+const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Tile size matches the 4:3 gallery card thumbnail */
 const TILE_WIDTH = 320;
@@ -113,7 +120,9 @@ export const renderGallerySheet = async ({ motion = 'orbit', frames = 24, amount
   renderer.getClearColor(savedClearColor);
   const savedClearAlpha = renderer.getClearAlpha();
 
-  const target = savedTarget.clone();
+  // Fly mode pins the controls target right in front of the camera; orbit
+  // around the scan instead of spinning in place.
+  const target = getOrbitPivot() || savedTarget.clone();
   const offset = savedPosition.clone().sub(target);
   const radius = Math.max(offset.length(), 1e-3);
   const up = new THREE.Vector3(0, 1, 0);
@@ -126,6 +135,7 @@ export const renderGallerySheet = async ({ motion = 'orbit', frames = 24, amount
   const ctx = sheet.getContext('2d');
 
   try {
+    suspendRenderLoop();
     scene.background = null;
     renderer.setClearColor(0x000000, 0);
     renderer.setPixelRatio(1);
@@ -149,6 +159,12 @@ export const renderGallerySheet = async ({ motion = 'orbit', frames = 24, amount
         camera.lookAt(target);
       }
       camera.updateMatrixWorld(true);
+      // Spark sorts splats asynchronously for the new viewpoint: render once to
+      // kick off the sort, give it a moment, then render again for the capture.
+      spark?.update?.({ scene, camera });
+      forceRenderNow();
+      await nextFrame();
+      await sleep(30);
       // Render and read back in the same task: the drawing buffer has no
       // preserveDrawingBuffer, so the copy must happen synchronously.
       forceRenderNow();
@@ -168,6 +184,7 @@ export const renderGallerySheet = async ({ motion = 'orbit', frames = 24, amount
     renderer.setSize(savedSize.x, savedSize.y, false);
     composer.setSize(composerSize.width, composerSize.height);
     if (resize) resize();
+    resumeRenderLoop();
     requestRender();
   }
 

@@ -36,6 +36,34 @@ const getPersistedBoolean = (key, fallback = false) => {
  */
 const defaultDevtoolsEnabled = getPersistedBoolean('mobileDevtoolsEnabled', false);
 
+/** Safely load/save a persisted string value from localStorage */
+const getPersisted = (key, fallback, allowed) => {
+  try {
+    const v = window.localStorage.getItem(key);
+    if (v === null) return fallback;
+    if (allowed && !allowed.includes(v)) return fallback;
+    return v;
+  } catch {
+    return fallback;
+  }
+};
+const persist = (key, value) => {
+  try {
+    window.localStorage.setItem(key, String(value));
+  } catch {
+    /* ignore */
+  }
+};
+
+/** Solid viewer background colors offered in the camera settings */
+export const BACKGROUND_COLORS = [
+  { id: 'black', label: 'Black', value: '#000000' },
+  { id: 'dark', label: 'Dark gray', value: '#1b1d22' },
+  { id: 'gray', label: 'Gray', value: '#808080' },
+  { id: 'light', label: 'Light gray', value: '#d4d4d4' },
+  { id: 'white', label: 'White', value: '#ffffff' },
+];
+
 
 /** Maximum number of log entries to keep */
 const MAX_LOG_ENTRIES = 14;
@@ -53,12 +81,13 @@ export const useStore = create(
   subscribeWithSelector((set, get) => ({
   // Camera settings
   fov: 60,
-  cameraRange: 8,
-  dollyZoomEnabled: true,
   viewerFovSlider: false,
-  stereoEnabled: false,
-  stereoEyeSep: 0.064,
-  stereoAspect: 1.0,
+  /** 'orbit' (rotate around a pivot) or 'fly' (look around, move with WASD) */
+  navMode: getPersisted('splatbox.navMode', 'orbit', ['orbit', 'fly']),
+  /** Movement speed multiplier for keyboard navigation */
+  moveSpeed: Number(getPersisted('splatbox.moveSpeed', '1')) || 1,
+  /** Solid viewer background color id (see BACKGROUND_COLORS) */
+  bgColor: getPersisted('splatbox.bgColor', 'black', BACKGROUND_COLORS.map((c) => c.id)),
   vrSupported: false,
   vrSessionActive: false,
   vrModelScale: 1,
@@ -142,20 +171,18 @@ export const useStore = create(
   /** Toggles the viewer FOV slider overlay */
   toggleViewerFovSlider: () => set((state) => ({ viewerFovSlider: !state.viewerFovSlider })),
   
-  /** Sets camera orbit range in degrees */
-  setCameraRange: (range) => set({ cameraRange: range }),
-  
-  /** Enables/disables dolly zoom compensation */
-  setDollyZoomEnabled: (enabled) => set({ dollyZoomEnabled: enabled }),
-
-  /** Enables/disables side-by-side stereo rendering */
-  setStereoEnabled: (enabled) => set({ stereoEnabled: enabled }),
-
-  /** Sets stereo eye separation distance */
-  setStereoEyeSep: (eyeSep) => set({ stereoEyeSep: eyeSep }),
-
-  /** Sets stereo aspect ratio */
-  setStereoAspect: (aspect) => set({ stereoAspect: aspect }),
+  setNavMode: (navMode) => {
+    persist('splatbox.navMode', navMode);
+    set({ navMode });
+  },
+  setMoveSpeed: (moveSpeed) => {
+    persist('splatbox.moveSpeed', moveSpeed);
+    set({ moveSpeed });
+  },
+  setBgColor: (bgColor) => {
+    persist('splatbox.bgColor', bgColor);
+    set({ bgColor });
+  },
 
   /** Sets axis swap toggles */
   setSwapX: (enabled) => set({ swapX: enabled }),

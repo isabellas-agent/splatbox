@@ -10,11 +10,9 @@ import CameraControls from './CameraControls';
 import DebugSettings from './DebugSettings';
 import AnimationSettings from './AnimationSettings';
 import StorageSourceList from './StorageSourceList';
-import { getFormatAccept } from '../formats/index';
-import { handleMultipleFiles, loadFromStorageSource } from '../fileLoader';
+import { loadFromStorageSource } from '../fileLoader';
 
 /** File input accept attribute value */
-const formatAccept = getFormatAccept();
 
 /** Minimum swipe distance to trigger open/close */
 const SWIPE_THRESHOLD = 50;
@@ -25,7 +23,6 @@ function MobileSheet() {
   const togglePanel = useStore((state) => state.togglePanel);
 
   // Refs
-  const fileInputRef = useRef(null);
   const dragHandleRef = useRef(null);
 
   const handleSelectSource = useCallback((source) => {
@@ -50,24 +47,6 @@ function MobileSheet() {
       if (dir === 'down' && panelOpen) togglePanel();
     }
   });
-
-  /**
-   * Triggers file picker dialog.
-   */
-  const handlePickFile = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
-
-  /**
-   * Handles file selection from file picker.
-   */
-  const handleFileChange = useCallback(async (event) => {
-    const files = event.target.files;
-    if (files && files.length > 0) {
-      await handleMultipleFiles(Array.from(files));
-      event.target.value = '';
-    }
-  }, []);
 
   return (
     <div class={`mobile-sheet ${panelOpen ? 'open' : 'closed'}`}>
