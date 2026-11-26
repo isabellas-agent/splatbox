@@ -228,6 +228,21 @@ test('saved default view and gallery animation per scan', async () => {
   assert.equal((await patch({ paths: ['assets/room.ply'], view: { position: [1, 2, 3], target: [0, 0, 0], fov: 'wide' } })).statusCode, 400);
   assert.equal((await patch({ paths: ['assets/room.ply'], gallery: { motion: 'spin' } })).statusCode, 400);
   assert.equal((await patch({ paths: ['assets/room.ply'], gallery: { motion: 'orbit', frames: 1 } })).statusCode, 400);
+  assert.equal((await patch({ paths: ['assets/room.ply'], gallery: { motion: 'orbit', axis: 'w' } })).statusCode, 400);
+  assert.equal((await patch({ paths: ['assets/room.ply'], gallery: { motion: 'orbit', pivot: 'nowhere' } })).statusCode, 400);
+
+  // Orbit axis + pivot are stored
+  r = await patch({ paths: ['assets/room.ply'], gallery: { motion: 'orbit', axis: 'z', pivot: 'center', frames: 24, duration: 6000 } });
+  assert.equal(r.statusCode, 200);
+  m = (await app.inject(`/files/collections/${c.id}/manifest.json`)).json();
+  assert.equal(m.assets[0].gallery.axis, 'z');
+  assert.equal(m.assets[0].gallery.pivot, 'center');
+
+  // "No animation" with zeroed fields (what Clear sends) is accepted
+  r = await patch({ paths: ['assets/room.ply'], gallery: { motion: 'none', frames: 0, duration: 0, amount: 0.12 } });
+  assert.equal(r.statusCode, 200);
+  r = await patch({ paths: ['assets/room.ply'], gallery: { motion: 'orbit', frames: 24, duration: 8000 } });
+  assert.equal(r.statusCode, 200);
 
   // Clearing the view but keeping the animation setting
   r = await patch({ paths: ['assets/room.ply'], view: null });

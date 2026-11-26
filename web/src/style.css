@@ -3494,7 +3494,7 @@ select option {
 
 .gallery-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--gallery-card-min, 220px), 100%), 1fr));
   gap: 16px;
 }
 
@@ -3719,7 +3719,7 @@ select option {
   }
 
   .gallery-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(calc(var(--gallery-card-min, 220px) * 0.68), 100%), 1fr));
     gap: 10px;
   }
 
@@ -4075,4 +4075,61 @@ select option {
 .bg-swatch.is-active {
   border-color: #6ee7ff;
   box-shadow: 0 0 0 2px rgba(110, 231, 255, 0.35);
+}
+
+/* Gallery card size slider */
+.gallery-size {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(230, 236, 248, 0.6);
+  font-size: 11px;
+}
+
+.gallery-size input[type="range"] {
+  width: 90px;
+  accent-color: #6ee7ff;
+}
+
+@media (max-width: 600px) {
+  .gallery-size input[type="range"] {
+    width: 60px;
+  }
+}
+
+/* Scan view dialog: keep the viewer visible to check the orbit axis */
+.gallery-dialog-overlay.scan-view-overlay {
+  background: rgba(0, 0, 0, 0.18);
+  justify-content: flex-end;
+}
+
+.scan-view-orbit {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+  align-items: end;
+}
+
+.scan-view-orbit .gallery-btn {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.scan-view-orbit__hint {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgba(230, 236, 248, 0.55);
+}
+
+@media (max-width: 600px) {
+  .gallery-dialog-overlay.scan-view-overlay {
+    justify-content: center;
+    align-items: flex-end;
+  }
 }

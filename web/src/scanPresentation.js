@@ -32,11 +32,12 @@ import {
   THREE,
 } from './viewer.js';
 import { getSource } from './storage/index.js';
+import { useStore } from './store.js';
 import { resize } from './layout.js';
 import { captureCurrentAssetPreview } from './assetManager.js';
 import { applySavedView, captureSavedView, saveHomeView } from './cameraUtils.js';
 import { savePreviewBlob } from './fileStorage.js';
-import { getOrbitPivot } from './navigation.js';
+import { getOrbitPivot, getSceneScale } from './navigation.js';
 
 const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -61,6 +62,129 @@ export const GALLERY_MOTIONS = [
   { id: 'orbit', label: 'Orbit 360°', hint: 'The camera circles once around the object.' },
   { id: 'parallax', label: 'Parallax', hint: 'The camera makes a small side-step and back.' },
 ];
+
+/** Orbit rotation axis options (world axes, or the saved view's screen vertical) */
+export const GALLERY_AXES = [
+  { id: 'y', label: 'Y axis (up)' },
+  { id: 'z', label: 'Z axis' },
+  { id: 'x', label: 'X axis' },
+  { id: 'view', label: 'Screen vertical' },
+];
+
+/** Orbit pivot options: where the rotation axis passes through */
+export const GALLERY_PIVOTS = [
+  { id: 'target', label: 'View pivot', hint: 'Where the camera looks (double-click a splat to set it).' },
+  { id: 'center', label: 'Scan centre', hint: 'Centre of the scan’s bounding box.' },
+];
+
+/**
+ * Resolve the orbit axis (unit vector, world space) and the point it passes
+ * through, for the current camera.
+ */
+export const resolveOrbit = ({ axis = 'y', pivot = 'target' } = {}) => {
+  const quat = camera.quaternion;
+  let dir;
+  if (axis === 'x') dir = new THREE.Vector3(1, 0, 0);
+  else if (axis === 'z') dir = new THREE.Vector3(0, 0, 1);
+  else if (axis === 'view') dir = new THREE.Vector3(0, 1, 0).applyQuaternion(quat);
+  else dir = new THREE.Vector3(0, 1, 0);
+
+  let point = null;
+  if (pivot === 'center' && currentMesh) {
+    try {
+      const box = currentMesh.getBoundingBox().clone().applyMatrix4(currentMesh.matrixWorld);
+      const c = box.getCenter(new THREE.Vector3());
+      if ([c.x, c.y, c.z].every(Number.isFinite)) point = c;
+    } catch {
+      /* fall back to the view pivot */
+    }
+  }
+  // Fly mode pins the controls target right in front of the camera; use a
+  // pivot at scan depth instead so the turntable doesn't spin in place.
+  if (!point) point = getOrbitPivot() || controls.target.clone();
+  return { axis: dir.normalize(), point };
+};
+
+/** Rigidly rotate the start pose by `angle` around the orbit axis. */
+const applyOrbitPose = (orbit, startPos, startQuat, angle) => {
+  const q = new THREE.Quaternion().setFromAxisAngle(orbit.axis, angle);
+  camera.position.copy(startPos).sub(orbit.point).applyQuaternion(q).add(orbit.point);
+  camera.quaternion.copy(q).multiply(startQuat);
+};
+
+let guide = null;
+
+/** Show the orbit axis (line through the pivot) and the pivot in the viewer. */
+export const showOrbitGuide = (options) => {
+  hideOrbitGuide();
+  if (!camera || !controls || !currentMesh) return;
+  const { axis, point } = resolveOrbit(options);
+  const len = Math.max(getSceneScale() * 0.6, 1e-3);
+  const material = new THREE.LineBasicMaterial({ color: 0x6ee7ff, depthTest: false, transparent: true, opacity: 0.9 });
+  const geometry = new THREE.BufferGeometry().setFromPoints([
+    point.clone().addScaledVector(axis, -len),
+    point.clone().addScaledVector(axis, len),
+  ]);
+  const line = new THREE.Line(geometry, material);
+  const dot = new THREE.Mesh(
+    new THREE.SphereGeometry(len * 0.02, 16, 12),
+    new THREE.MeshBasicMaterial({ color: 0xffcc33, depthTest: false, transparent: true }),
+  );
+  dot.position.copy(point);
+  guide = new THREE.Group();
+  guide.add(line, dot);
+  guide.renderOrder = 999;
+  line.renderOrder = 999;
+  dot.renderOrder = 1000;
+  scene.add(guide);
+  requestRender();
+};
+
+export const hideOrbitGuide = () => {
+  if (!guide) return;
+  scene.remove(guide);
+  guide.traverse((o) => {
+    o.geometry?.dispose?.();
+    o.material?.dispose?.();
+  });
+  guide = null;
+  requestRender();
+};
+
+let previewing = null;
+
+/** Play the orbit once in the live viewer so the axis/pivot can be checked. */
+export const playOrbitPreview = (options, durationMs = 4000) => {
+  if (!camera || !controls) return Promise.resolve();
+  if (previewing) return previewing;
+  const orbit = resolveOrbit(options);
+  const startPos = camera.position.clone();
+  const startQuat = camera.quaternion.clone();
+  const controlsWereEnabled = controls.enabled;
+  controls.enabled = false;
+  previewing = new Promise((resolve) => {
+    const t0 = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / durationMs);
+      applyOrbitPose(orbit, startPos, startQuat, t * Math.PI * 2);
+      camera.updateMatrixWorld(true);
+      requestRender();
+      if (t < 1) {
+        requestAnimationFrame(step);
+        return;
+      }
+      camera.position.copy(startPos);
+      camera.quaternion.copy(startQuat);
+      camera.updateMatrixWorld(true);
+      controls.enabled = controlsWereEnabled;
+      requestRender();
+      previewing = null;
+      resolve();
+    };
+    requestAnimationFrame(step);
+  });
+  return previewing;
+};
 
 export const isGalleryMotion = (motion) => Object.prototype.hasOwnProperty.call(GALLERY_MOTION_PRESETS, motion);
 
@@ -97,9 +221,11 @@ export const canSaveScanPresentation = (asset) => !!(asset && getServerSource(as
  * @param {'orbit'|'parallax'} options.motion
  * @param {number} options.frames - number of tiles (2..48)
  * @param {number} [options.amount] - parallax strength as a fraction of the distance
+ * @param {'y'|'z'|'x'|'view'} [options.axis] - orbit rotation axis
+ * @param {'target'|'center'} [options.pivot] - point the orbit axis passes through
  * @returns {Promise<{blob: Blob, frames: number, width: number, height: number}|null>}
  */
-export const renderGallerySheet = async ({ motion = 'orbit', frames = 24, amount = 0.12 } = {}) => {
+export const renderGallerySheet = async ({ motion = 'orbit', frames = 24, amount = 0.12, axis = 'y', pivot = 'target' } = {}) => {
   if (!renderer || !composer || !camera || !controls || !currentMesh) return null;
   const total = Math.round(frames);
   if (!Number.isFinite(total) || total < 2) return null;
@@ -120,14 +246,11 @@ export const renderGallerySheet = async ({ motion = 'orbit', frames = 24, amount
   renderer.getClearColor(savedClearColor);
   const savedClearAlpha = renderer.getClearAlpha();
 
-  // Fly mode pins the controls target right in front of the camera; orbit
-  // around the scan instead of spinning in place.
-  const target = getOrbitPivot() || savedTarget.clone();
-  const offset = savedPosition.clone().sub(target);
-  const radius = Math.max(offset.length(), 1e-3);
-  const up = new THREE.Vector3(0, 1, 0);
-  const forward = new THREE.Vector3().subVectors(target, savedPosition).normalize();
-  const right = new THREE.Vector3().crossVectors(forward, up).normalize();
+  const orbit = resolveOrbit({ axis, pivot });
+  const radius = Math.max(savedPosition.distanceTo(orbit.point), 1e-3);
+  // Parallax side-steps along the camera's own right vector
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(savedQuaternion).normalize();
+  hideOrbitGuide();
 
   const sheet = document.createElement('canvas');
   sheet.width = TILE_WIDTH * total;
@@ -152,11 +275,9 @@ export const renderGallerySheet = async ({ motion = 'orbit', frames = 24, amount
         // scan shifts in frame like a stereo pair.
         const shift = Math.sin(t * Math.PI * 2) * radius * amount;
         camera.position.copy(savedPosition).addScaledVector(right, shift);
-        camera.lookAt(target.clone().addScaledVector(right, shift));
+        camera.quaternion.copy(savedQuaternion);
       } else {
-        const rotated = offset.clone().applyAxisAngle(up, t * Math.PI * 2);
-        camera.position.copy(target).add(rotated);
-        camera.lookAt(target);
+        applyOrbitPose(orbit, savedPosition, savedQuaternion, t * Math.PI * 2);
       }
       camera.updateMatrixWorld(true);
       // Spark sorts splats asynchronously for the new viewpoint: render once to
@@ -202,10 +323,12 @@ export const renderGallerySheet = async ({ motion = 'orbit', frames = 24, amount
  * @param {'none'|'orbit'|'parallax'} options.motion
  * @param {number} [options.duration] - one loop in ms
  * @param {number} [options.amount] - parallax strength
+ * @param {'y'|'z'|'x'|'view'} [options.axis] - orbit axis
+ * @param {'target'|'center'} [options.pivot] - orbit pivot
  * @param {(stage: string) => void} [options.onStage]
  * @returns {Promise<{animation: boolean, view: Object, gallery: Object}>}
  */
-export const saveScanPresentation = async (asset, { motion = 'orbit', duration, amount = 0.12, onStage } = {}) => {
+export const saveScanPresentation = async (asset, { motion = 'orbit', duration, amount = 0.12, axis = 'y', pivot = 'target', onStage } = {}) => {
   const source = getServerSource(asset);
   if (!source) throw new Error('This scan is not hosted on the splatbox server, so its view cannot be saved.');
   const path = asset._remoteAsset?.path || asset.path;
@@ -218,6 +341,7 @@ export const saveScanPresentation = async (asset, { motion = 'orbit', duration, 
     frames,
     duration: Math.round(duration || preset.duration || 8000),
     amount: round(Math.min(1, Math.max(0.01, amount))),
+    ...(motion === 'orbit' ? { axis, pivot } : {}),
   };
   const view = captureSavedView();
   if (!view) throw new Error('Viewer is not ready.');
@@ -229,7 +353,7 @@ export const saveScanPresentation = async (asset, { motion = 'orbit', duration, 
 
   if (motion !== 'none') {
     onStage?.(`Rendering ${frames} preview frames…`);
-    const sheet = await renderGallerySheet({ motion, frames, amount: gallery.amount });
+    const sheet = await renderGallerySheet({ motion, frames, amount: gallery.amount, axis, pivot });
     if (!sheet?.blob) throw new Error('Could not render the gallery animation.');
     onStage?.('Uploading animation…');
     const ok = await source.uploadAnimation(path, sheet.blob);
@@ -260,17 +384,44 @@ export const saveScanPresentation = async (asset, { motion = 'orbit', duration, 
   try {
     const remote = (await source.listAssets()).find((a) => a.path === path);
     if (remote) {
-      asset.view = remote.view;
-      asset.gallery = remote.gallery;
-      asset.animation = remote.animation;
-      asset.preview = remote.preview || asset.preview;
-      asset._remoteAsset = remote;
+      syncAssetPresentation(asset, {
+        view: remote.view,
+        gallery: remote.gallery,
+        animation: remote.animation,
+        preview: remote.preview || asset.preview,
+      });
     }
   } catch (err) {
     console.warn('[ScanPresentation] Refreshing the scan failed', err);
   }
 
   return { animation: motion !== 'none', view, gallery };
+};
+
+/**
+ * Write presentation fields onto the asset, its shared `_remoteAsset`, and
+ * every copy of it in the store. The store copies assets on some updates
+ * (e.g. preview changes), so mutating only the object we were handed would
+ * leave the dialog and gallery showing stale values.
+ */
+const syncAssetPresentation = (asset, fields) => {
+  const apply = (obj) => {
+    if (!obj) return;
+    Object.assign(obj, fields);
+    if (obj._remoteAsset) Object.assign(obj._remoteAsset, fields);
+  };
+  apply(asset);
+  const store = useStore.getState();
+  const assets = store.assets || [];
+  let touched = false;
+  const next = assets.map((a) => {
+    if (a === asset || a.id !== asset.id) return a;
+    touched = true;
+    const copy = { ...a, ...fields };
+    if (copy._remoteAsset) Object.assign(copy._remoteAsset, fields);
+    return copy;
+  });
+  useStore.setState({ assets: touched ? next : [...assets] });
 };
 
 /** Forget the saved view and turn the gallery animation off. */
@@ -280,12 +431,11 @@ export const clearScanPresentation = async (asset) => {
   const path = asset._remoteAsset?.path || asset.path;
   await source.updateAssetsMeta([path], {
     view: null,
-    gallery: { motion: 'none', frames: 0, duration: 0, amount: 0.12 },
+    gallery: { motion: 'none' },
   });
-  asset.view = null;
-  asset.gallery = { motion: 'none', frames: 0, duration: 0, amount: 0.12 };
-  if (asset._remoteAsset) {
-    asset._remoteAsset.view = null;
-    asset._remoteAsset.gallery = asset.gallery;
-  }
+  syncAssetPresentation(asset, {
+    view: null,
+    gallery: { motion: 'none', frames: 0, duration: 0, amount: 0.12 },
+    animation: null,
+  });
 };

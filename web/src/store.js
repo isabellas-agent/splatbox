@@ -86,6 +86,8 @@ export const useStore = create(
   navMode: getPersisted('splatbox.navMode', 'orbit', ['orbit', 'fly']),
   /** Movement speed multiplier for keyboard navigation */
   moveSpeed: Number(getPersisted('splatbox.moveSpeed', '1')) || 1,
+  /** Minimum width of a gallery card in px (grid density) */
+  galleryCardSize: Math.min(480, Math.max(120, Number(getPersisted('splatbox.galleryCardSize', '220')) || 220)),
   /** Solid viewer background color id (see BACKGROUND_COLORS) */
   bgColor: getPersisted('splatbox.bgColor', 'black', BACKGROUND_COLORS.map((c) => c.id)),
   vrSupported: false,
@@ -174,6 +176,10 @@ export const useStore = create(
   setNavMode: (navMode) => {
     persist('splatbox.navMode', navMode);
     set({ navMode });
+  },
+  setGalleryCardSize: (galleryCardSize) => {
+    persist('splatbox.galleryCardSize', galleryCardSize);
+    set({ galleryCardSize });
   },
   setMoveSpeed: (moveSpeed) => {
     persist('splatbox.moveSpeed', moveSpeed);

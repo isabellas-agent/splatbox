@@ -22,7 +22,10 @@ import {
   faArrowRightArrowLeft,
   faTags,
   faListCheck,
+  faTableCells,
+  faTableCellsLarge,
 } from '@fortawesome/free-solid-svg-icons';
+import { useStore } from '../store.js';
 import {
   getSourcesArray,
   onSourceChange,
@@ -445,6 +448,8 @@ function Gallery({ show, canReturn, onReturn, onOpenAsset }) {
   const [filter, setFilter] = useState('all');
   const [tagFilter, setTagFilter] = useState(null);
   const [query, setQuery] = useState('');
+  const cardSize = useStore((state) => state.galleryCardSize);
+  const setCardSize = useStore((state) => state.setGalleryCardSize);
   const [selectMode, setSelectMode] = useState(false);
   // key -> { sourceId, path }
   const [selection, setSelection] = useState(() => new Map());
@@ -595,7 +600,7 @@ function Gallery({ show, canReturn, onReturn, onOpenAsset }) {
   if (!show) return null;
 
   return (
-    <div class={`gallery-overlay ${selectMode ? 'is-selecting' : ''}`}>
+    <div class={`gallery-overlay ${selectMode ? 'is-selecting' : ''}`} style={{ '--gallery-card-min': `${cardSize}px` }}>
       <div class="gallery">
         <header class="gallery-header">
           <div class="gallery-brand">
@@ -613,6 +618,19 @@ function Gallery({ show, canReturn, onReturn, onOpenAsset }) {
                 value={query}
                 onInput={(e) => setQuery(e.currentTarget.value)}
               />
+            </label>
+            <label class="gallery-size" title="Card size">
+              <FontAwesomeIcon icon={faTableCells} />
+              <input
+                type="range"
+                min="120"
+                max="480"
+                step="10"
+                value={cardSize}
+                aria-label="Gallery card size"
+                onInput={(e) => setCardSize(Number(e.currentTarget.value))}
+              />
+              <FontAwesomeIcon icon={faTableCellsLarge} />
             </label>
             <button
               class={`gallery-btn ${selectMode ? 'active' : ''}`}

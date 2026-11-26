@@ -5,7 +5,7 @@ with a WebXR viewer that runs in the Quest 3 browser. One container, one `/data`
 
 - **Gallery start screen** in any browser: all collections as a grid of scans with thumbnails, search
   (name, title, description, tags), collection and tag filters, create / rename / delete collections and
-  upload into them. Click a scan to open it.
+  upload into them. Click a scan to open it. The slider next to the search sets the card size (saved per browser).
 - **Manage scans**: per-scan title, description and tags (pencil on a card); **Select** mode for bulk
   move / copy to another collection, tagging and delete. Thumbnails and metadata move with the scan.
 - **Viewer + VR mode** (Spark 2 renderer, `.ply` / `.sog` / `.spz` / `.splat` / `.ksplat`), served by the app itself.
@@ -23,7 +23,9 @@ with a WebXR viewer that runs in the Quest 3 browser. One container, one `/data`
 - **Saved default view + animated gallery preview, per scan**: the camera button in the viewer stores the
   current position/orientation/FOV as the view the scan opens with (it is also what *reset view* returns to)
   and renders the thumbnail from that pose. The same dialog picks how the scan animates in the gallery:
-  **Orbit 360°** around the saved target, **Parallax** (a small side-step), or **None**. The viewer renders
+  **Orbit 360°**, **Parallax** (a small side-step), or **None**. For the orbit you pick the pivot (the view
+  pivot — double-click a splat to set it — or the scan's bounding-box centre) and the axis (Y, Z, X or the
+  screen vertical); the viewer draws the axis while you choose and *Preview orbit* plays it once. The viewer renders
   the frames into one sprite sheet, uploads it next to the scan (`<scan>.anim.webp`) and the gallery card
   plays it with a CSS `steps()` animation — one image per card, works on every device, no extra service.
 - Per-collection `manifest.json` (manifest v1) at `/files/collections/<id>/manifest.json`.
@@ -120,10 +122,11 @@ cd server && DATA_DIR=../data WEB_DIR=../web/dist npm start
 `gallery` is how its card animates:
 
 ```json
-"gallery": { "motion": "orbit", "frames": 24, "duration": 8000, "amount": 0.12 }
+"gallery": { "motion": "orbit", "axis": "y", "pivot": "target", "frames": 24, "duration": 8000, "amount": 0.12 }
 ```
 
-`motion` is `none`, `orbit` (one full turn around `view.target`) or `parallax` (a side-step of
+`motion` is `none`, `orbit` (one full turn around `axis` — `y`, `z`, `x` or `view` (screen vertical) —
+through `pivot`: `target` = the view pivot, `center` = the scan's bounds centre) or `parallax` (a side-step of
 `amount` × the view distance). The viewer renders `frames` tiles of 320×240 into a single
 `<scan>.anim.webp` sprite sheet next to the scan; the server attaches it as `animation` the same way
 `<scan>.webp` becomes `preview`. Send `view: null` / `gallery: null` to clear them, or rebuild them

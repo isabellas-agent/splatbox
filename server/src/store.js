@@ -75,6 +75,10 @@ function cleanTags(v) {
 }
 
 const GALLERY_MOTIONS = ['none', 'orbit', 'parallax'];
+/** Orbit rotation axis: world X/Y/Z, or the screen vertical of the saved view */
+const GALLERY_AXES = ['y', 'z', 'x', 'view'];
+/** Orbit pivot: the view target (orbit pivot) or the centre of the scan's bounds */
+const GALLERY_PIVOTS = ['target', 'center'];
 
 function cleanNumber(v, field, { min = -Infinity, max = Infinity } = {}) {
   if (typeof v !== 'number' || !Number.isFinite(v)) throw new HttpError(400, `${field} must be a number`);
@@ -114,8 +118,16 @@ function cleanGallery(g) {
   if (!GALLERY_MOTIONS.includes(motion)) {
     throw new HttpError(400, `gallery.motion must be one of: ${GALLERY_MOTIONS.join(', ')}`);
   }
+  // No animation: nothing else to validate (clients may send zeroed fields)
+  if (motion === 'none') return { motion, frames: 0, duration: 0, amount: 0.12 };
+  const axis = g.axis === undefined ? 'y' : g.axis;
+  if (!GALLERY_AXES.includes(axis)) throw new HttpError(400, `gallery.axis must be one of: ${GALLERY_AXES.join(', ')}`);
+  const pivot = g.pivot === undefined ? 'target' : g.pivot;
+  if (!GALLERY_PIVOTS.includes(pivot)) throw new HttpError(400, `gallery.pivot must be one of: ${GALLERY_PIVOTS.join(', ')}`);
   return {
     motion,
+    axis,
+    pivot,
     frames: Math.round(g.frames === undefined ? 24 : cleanNumber(g.frames, 'gallery.frames', { min: 2, max: 48 })),
     duration: Math.round(g.duration === undefined ? 6000 : cleanNumber(g.duration, 'gallery.duration', { min: 500, max: 60000 })),
     amount: g.amount === undefined ? 0.12 : cleanNumber(g.amount, 'gallery.amount', { min: 0.01, max: 1 }),

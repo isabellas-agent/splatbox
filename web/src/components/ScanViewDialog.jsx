@@ -8,11 +8,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCamera, faCheck, faTrash, faXmark } from '@fortawesome/free-solid-svg-icons';
+import { faCamera, faCheck, faPlay, faTrash, faXmark } from '@fortawesome/free-solid-svg-icons';
 import { useStore } from '../store.js';
 import {
+  GALLERY_AXES,
   GALLERY_MOTIONS,
   GALLERY_MOTION_PRESETS,
+  GALLERY_PIVOTS,
+  hideOrbitGuide,
+  playOrbitPreview,
+  showOrbitGuide,
   canSaveScanPresentation,
   clearScanPresentation,
   getScanPresentation,
@@ -47,6 +52,9 @@ function ScanViewDialog({ onClose }) {
   const [duration, setDuration] = useState(
     () => presentation.gallery?.duration || GALLERY_MOTION_PRESETS.orbit.duration,
   );
+  const [axis, setAxis] = useState(() => presentation.gallery?.axis || 'y');
+  const [pivot, setPivot] = useState(() => presentation.gallery?.pivot || 'target');
+  const [previewing, setPreviewing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState(null);
   const [error, setError] = useState(null);
@@ -59,12 +67,29 @@ function ScanViewDialog({ onClose }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [busy, onClose]);
 
+  // Draw the orbit axis through the pivot in the viewer while choosing it
+  useEffect(() => {
+    if (motion === 'orbit' && !busy && asset) showOrbitGuide({ axis, pivot });
+    else hideOrbitGuide();
+  }, [motion, axis, pivot, busy, asset]);
+  useEffect(() => () => hideOrbitGuide(), []);
+
+  const preview = useCallback(async () => {
+    if (previewing || busy) return;
+    setPreviewing(true);
+    try {
+      await playOrbitPreview({ axis, pivot });
+    } finally {
+      setPreviewing(false);
+    }
+  }, [axis, pivot, previewing, busy]);
+
   const save = useCallback(async () => {
     if (!asset || busy || !canSave) return;
     setBusy(true);
     setError(null);
     try {
-      const result = await saveScanPresentation(asset, { motion, duration, onStage: setStatus });
+      const result = await saveScanPresentation(asset, { motion, duration, axis, pivot, onStage: setStatus });
       setStatus(null);
       addLog(
         result.animation
@@ -77,7 +102,7 @@ function ScanViewDialog({ onClose }) {
       setError(err.message || String(err));
       setBusy(false);
     }
-  }, [asset, busy, canSave, motion, duration, addLog, onClose]);
+  }, [asset, busy, canSave, motion, duration, axis, pivot, addLog, onClose]);
 
   const clear = useCallback(async () => {
     if (!asset || busy || !canSave) return;
@@ -144,6 +169,35 @@ function ScanViewDialog({ onClose }) {
                     </label>
                   ))}
                 </div>
+
+                {motion === 'orbit' && (
+                  <div class="scan-view-orbit">
+                    <label class="gallery-field">
+                      <span>Rotate around</span>
+                      <select value={pivot} onChange={(event) => setPivot(event.currentTarget.value)}>
+                        {GALLERY_PIVOTS.map((option) => (
+                          <option value={option.id} key={option.id}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label class="gallery-field">
+                      <span>Axis</span>
+                      <select value={axis} onChange={(event) => setAxis(event.currentTarget.value)}>
+                        {GALLERY_AXES.map((option) => (
+                          <option value={option.id} key={option.id}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <button type="button" class="gallery-btn" onClick={preview} disabled={previewing}>
+                      <FontAwesomeIcon icon={faPlay} />
+                      <span>{previewing ? 'Previewing…' : 'Preview orbit'}</span>
+                    </button>
+                    <small class="scan-view-orbit__hint">
+                      {GALLERY_PIVOTS.find((p) => p.id === pivot)?.hint} The cyan line in the viewer is the
+                      rotation axis, the yellow dot the pivot. Scans exported Z-up need the Z axis.
+                    </small>
+                  </div>
+                )}
 
                 {motion !== 'none' && (
                   <label class="gallery-field">
